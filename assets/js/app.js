@@ -6,7 +6,7 @@
   'use strict';
 
   var D = window.BiliList;
-  var STORE_KEY = 'bililist.prototype.v1';
+  var STORE_KEY = 'bililist.prototype.v2';
 
   /* ------------------------------------------------------------------ util */
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -42,6 +42,8 @@
   var state = {
     route: 'dashboard',
     signedIn: false,
+    user: null,
+    workspaces: [],
     lists: JSON.parse(JSON.stringify(D.lists)),
     lifeAdmin: JSON.parse(JSON.stringify(D.lifeAdmin)),
     events: JSON.parse(JSON.stringify(D.events)),
@@ -49,10 +51,8 @@
     members: JSON.parse(JSON.stringify(D.members)),
     categories: JSON.parse(JSON.stringify(D.categories)),
     inventory: JSON.parse(JSON.stringify(D.pantry)),
-    pending: [
-      { email: 'mika.santos@email.com', role: 'Editor', sent: '2 days ago' }
-    ],
-    activeListId: 'l1',
+    pending: [],
+    activeListId: null,
     activeAisleTab: 'tobuy',
     spendingRange: 'w1',
     calMonth: new Date(D.TODAY.getFullYear(), D.TODAY.getMonth(), 1),
@@ -67,6 +67,74 @@
     catPanelOpen: false,
     expandedCats: {}
   };
+
+  /* ------------------------------------------------------- account boot-up */
+  function initialsOf(name) {
+    var parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    var first = parts[0].charAt(0);
+    var second = parts.length > 1 ? parts[parts.length - 1].charAt(0) : (parts[0].charAt(1) || '');
+    return (first + second).toUpperCase();
+  }
+
+  /* There are no demo accounts any more: the household, its members and the
+     greeting are all derived from whoever is signed in. */
+  function applyUser(user) {
+    state.user = user || null;
+
+    var email = (user && user.email) || '';
+    var meta = (user && user.user_metadata) || {};
+    var raw = meta.username || meta.full_name || (email ? email.split('@')[0] : 'You');
+    var pretty = String(raw).replace(/[._-]+/g, ' ').trim().replace(/\s+/g, ' ') || 'You';
+    pretty = pretty.replace(/\b[a-z]/g, function (ch) { return ch.toUpperCase(); });
+
+    state.members = [{
+      id: 'me',
+      name: pretty,
+      email: email,
+      initials: initialsOf(pretty),
+      role: 'Owner',
+      online: true,
+      you: true
+    }];
+
+    state.workspaces = [{
+      id: 'w1',
+      name: pretty.split(' ')[0] + "'s household",
+      sub: "1 member · You're the owner",
+      icon: 'house',
+      active: true
+    }];
+
+    ensureStarterState();
+  }
+
+  /* everybody needs at least one list to land on */
+  function ensureStarterState() {
+    if (!state.lists.length) {
+      state.lists = [{
+        id: 'l1',
+        name: 'My first list',
+        kind: 'grocery',
+        icon: 'cart',
+        tint: 'green',
+        shared: true,
+        items: []
+      }];
+    }
+    var found = false;
+    for (var i = 0; i < state.lists.length; i++) {
+      if (state.lists[i].id === state.activeListId) found = true;
+    }
+    if (!found) state.activeListId = state.lists[0].id;
+  }
+
+  function you() {
+    for (var i = 0; i < state.members.length; i++) {
+      if (state.members[i].you) return state.members[i];
+    }
+    return state.members[0] || { id: 'me', name: 'You', email: '', initials: '?', role: 'Owner', you: true };
+  }
 
   /* ------------------------------------------------------- category helpers */
   function catById(id) {
@@ -368,25 +436,27 @@
     $$('.mnav-item').forEach(function (t) {
       t.classList.toggle('is-active', t.dataset.route === state.route);
     });
-    var you = state.members.filter(function (m) { return m.you; })[0] || state.members[0];
+    var me = you();
     var ws = activeWorkspace();
-    $('#chip-avatar').textContent = you.initials;
+    $('#chip-avatar').textContent = me.initials;
     $('#chip-household').textContent = ws.name;
-    $('#chip-sub').textContent = you.name.split(' ')[0] + ' · Household ' + you.role.toLowerCase();
-    renderProfileMenu(you, ws);
+    $('#chip-sub').textContent = me.name.split(' ')[0] + ' · Household ' + me.role.toLowerCase();
+    renderProfileMenu(me, ws);
   }
 
   function activeWorkspace() {
-    for (var i = 0; i < D.workspaces.length; i++) if (D.workspaces[i].active) return D.workspaces[i];
-    return D.workspaces[0];
+    for (var i = 0; i < state.workspaces.length; i++) {
+      if (state.workspaces[i].active) return state.workspaces[i];
+    }
+    return state.workspaces[0] || { id: 'w1', name: 'My household', sub: '', icon: 'house' };
   }
 
-  function renderProfileMenu(you, ws) {
-    $('#pmenu-avatar').textContent = you.initials;
-    $('#pmenu-name').textContent = you.name;
-    $('#pmenu-mail').textContent = you.email;
+  function renderProfileMenu(me, ws) {
+    $('#pmenu-avatar').textContent = me.initials;
+    $('#pmenu-name').textContent = me.name;
+    $('#pmenu-mail').textContent = me.email || 'Not signed in';
 
-    $('#pmenu-workspaces').innerHTML = D.workspaces.map(function (w) {
+    $('#pmenu-workspaces').innerHTML = state.workspaces.map(function (w) {
       var ico = w.icon === 'house' ? 'house' : 'friends';
       return '<button class="pmenu-ws' + (w.active ? ' is-active' : '') + '" data-ws="' + w.id + '">' +
         '<span class="pmenu-ws-ico"><svg class="ic"><use href="#i-' + ico + '"/></svg></span>' +
@@ -421,7 +491,7 @@
     return '' +
       '<section class="greet">' +
         '<h1>A little order, a lighter day.</h1>' +
-        '<p>Welcome back, Alex. Here\'s what\'s new in your household\'s plate.</p>' +
+        '<p>Welcome back, ' + esc(you().name.split(' ')[0]) + '. Here\'s what\'s new in your household\'s plate.</p>' +
         '<div class="greet-meta">' +
           '<span class="greet-date">' + icon('calendar') + esc(longDate(D.TODAY)) + '</span>' +
           '<button class="btn-new" data-act="new-list">' + icon('plus') + ' Create a list</button>' +
@@ -842,7 +912,9 @@
               '<button class="empty-cta" data-act="add-named" data-name="' + esc(state.listQuery.trim()) + '">+ Add it to the list</button>'
             : (tab === 'pantry'
               ? 'Nothing in the pantry yet. Items you check off land here automatically.'
-              : 'Everything is bought. Nice work — nothing left to pick up.')) +
+              : (list.items.length === 0
+                ? 'No items yet. Press “Add item” to start your list.'
+                : 'Everything is bought. Nice work — nothing left to pick up.'))) +
         '</div>';
       } else {
         body = groups;
@@ -856,7 +928,7 @@
     var tabs = [
       { id: 'tobuy', label: 'To Buy', n: toBuy.length },
       { id: 'pantry', label: 'Pantry', n: bought.length },
-      { id: 'inventory', label: 'Inventory', n: D.pantry.length }
+      { id: 'inventory', label: 'Inventory', n: state.inventory.length }
     ].map(function (t) {
       return '<button class="ls-pill' + (tab === t.id ? ' is-active' : '') + '" data-tab="' + t.id + '">' +
         t.label + ' <span class="pill-count">' + t.n + '</span></button>';
@@ -923,7 +995,7 @@
         '<span class="card-title">A little life admin</span>' +
         '<button class="card-more" data-route="lists">View tasks ' + icon('arrow-right') + '</button>' +
       '</div>' +
-      '<div class="life-items">' + rows + '</div>' +
+      '<div class="life-items">' + (rows || '<p class="empty-line">Nothing on the list yet.</p>') + '</div>' +
     '</section>';
   }
 
@@ -999,7 +1071,7 @@
         '<span class="card-title">Coming up</span>' +
         '<button class="card-more" data-act="new-event">' + icon('plus') + '</button>' +
       '</div>' +
-      '<div class="coming-list">' + rows + '</div>' +
+      '<div class="coming-list">' + (rows || '<p class="empty-line">Nothing scheduled yet.</p>') + '</div>' +
     '</section>';
   }
 
@@ -1020,7 +1092,7 @@
         '<span class="card-title">A shared effort</span>' +
         '<button class="card-more">View all</button>' +
       '</div>' +
-      '<div class="effort-list">' + rows + '</div>' +
+      '<div class="effort-list">' + (rows || '<p class="empty-line">No activity yet.</p>') + '</div>' +
     '</section>';
   }
 
@@ -1062,7 +1134,7 @@
   }
 
   function renderLists() {
-    var pantryRows = D.pantry.map(function (p) {
+    var pantryRows = state.inventory.map(function (p) {
       return '<div class="pantry-row">' +
         '<span class="pantry-ico">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
         '<div class="p-name">' + esc(p.name) + '</div>' +
@@ -1333,10 +1405,10 @@
 
   /* =============================== DRAWER ================================ */
   function renderDrawer() {
-    var you = state.members.filter(function (m) { return m.you; })[0] || state.members[0];
+    var me = you();
     var online = state.members.filter(function (m) { return m.online; }).length;
 
-    var ws = D.workspaces.map(function (w) {
+    var ws = state.workspaces.map(function (w) {
       var ico = w.icon === 'house' ? 'house' : 'friends';
       return '<button class="ws-item' + (w.active ? ' is-active' : '') + '" data-ws="' + w.id + '">' +
         '<span class="ws-ico">' + icon(ico) + '</span>' +
@@ -1385,10 +1457,10 @@
       '</div>' +
 
       '<div class="profile-card">' +
-        '<span class="avatar avatar-lg">' + esc(you.initials) + '</span>' +
+        '<span class="avatar avatar-lg">' + esc(me.initials) + '</span>' +
         '<div class="grow">' +
-          '<div class="pc-name">' + esc(you.name) + '</div>' +
-          '<div class="pc-mail">' + esc(you.email) + '</div>' +
+          '<div class="pc-name">' + esc(me.name) + '</div>' +
+          '<div class="pc-mail">' + esc(me.email) + '</div>' +
         '</div>' +
         '<a class="pc-my" href="#" onclick="return false;">My profile</a>' +
       '</div>' +
@@ -1416,7 +1488,7 @@
           '<h3>Manage Members</h3>' +
           '<span class="online-now"><i></i> ' + online + ' online now</span>' +
         '</div>' +
-        '<p class="members-copy">Share the shopping, share the to-dos. Invite someone to The Lopez Household.</p>' +
+        '<p class="members-copy">Share the shopping, share the to-dos. Invite someone to ' + esc(activeWorkspace().name) + '.</p>' +
 
         '<label class="invite-label">Invite by email</label>' +
         '<div class="invite-row">' +
@@ -1948,14 +2020,16 @@
   function onSignedIn(user) {
     auth.user = user || null;
     state.signedIn = true;
+    applyUser(user);
     save();
     showApp();
-    toast('Welcome back, ' + (user && user.email ? user.email.split('@')[0] : 'Alex'));
+    toast('Welcome, ' + you().name.split(' ')[0] + '!');
   }
 
   /* demo mode: no backend, everything stays in the browser */
   function signInDemo() {
     state.signedIn = true;
+    applyUser(null);
     save();
     showApp();
     toast('Signed in (demo mode)');
@@ -2141,7 +2215,7 @@
     $('#pmenu').addEventListener('click', function (e) {
       var wsBtn = e.target.closest('.pmenu-ws');
       if (wsBtn) {
-        D.workspaces.forEach(function (w) { w.active = w.id === wsBtn.dataset.ws; });
+        state.workspaces.forEach(function (w) { w.active = w.id === wsBtn.dataset.ws; });
         renderTopbar();
         toggleProfileMenu(false);
         toast('Switched to ' + activeWorkspace().name);
@@ -2517,9 +2591,9 @@
     if (!el) return;
 
     if (el.dataset.ws) {
-      D.workspaces.forEach(function (w) { w.active = w.id === el.dataset.ws; });
+      state.workspaces.forEach(function (w) { w.active = w.id === el.dataset.ws; });
       renderDrawer();
-      toast('Switched to ' + (D.workspaces.filter(function (w) { return w.active; })[0] || {}).name);
+      toast('Switched to ' + (state.workspaces.filter(function (w) { return w.active; })[0] || {}).name);
       return;
     }
     if (el.dataset.resend) { toast('Invite re-sent to ' + el.dataset.resend); return; }
@@ -2563,6 +2637,7 @@
         if (r && r.data && r.data.session && r.data.user) {
           auth.user = r.data.user;
           state.signedIn = true;
+          applyUser(r.data.user);
           var h = (location.hash || '').replace('#/', '');
           if (['dashboard', 'lists', 'spending'].indexOf(h) !== -1) state.route = h;
           showApp();
@@ -2574,7 +2649,7 @@
     } else {
       var hh = (location.hash || '').replace('#/', '');
       if (['dashboard', 'lists', 'spending'].indexOf(hh) !== -1) state.route = hh;
-      if (state.signedIn) showApp(); else showLogin();
+      if (state.signedIn) { applyUser(null); showApp(); } else showLogin();
     }
 
     setAuthStep('signin');
@@ -2590,7 +2665,7 @@
       }
     }
 
-    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S, setAuthStep: setAuthStep };
+    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S, setAuthStep: setAuthStep, applyUser: applyUser, showApp: showApp };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

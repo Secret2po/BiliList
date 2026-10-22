@@ -13,5 +13,5 @@
 
 window.BILILIST_CONFIG = {
   supabaseUrl: 'https://xsjwhwrnseevlntxwjeg.supabase.co',
-  supabaseAnonKey: 'PASTE-YOUR-ANON-PUBLISHABLE-KEY-HERE'
+  supabaseAnonKey: 'sb_publishable_JmA7W3FNfRSOaDvrl45qWg_7m7kn7JR'
 };

@@ -57,17 +57,11 @@
   ];
 
   /* ================================================== MEMBERS ========== */
-  var MEMBERS = [
-    { id: 'm1', name: 'Alex Lopez',   email: 'alex.lopez@email.com',     initials: 'AL', role: 'Owner',  online: true,  you: true },
-    { id: 'm2', name: 'Shane Lopez',  email: 'shane.lopez@email.com',    initials: 'SL', role: 'Editor', online: true },
-    { id: 'm3', name: 'Qi Lopez',     email: 'qi.lopez@email.com',       initials: 'QL', role: 'Editor', online: true },
-    { id: 'm4', name: 'Rainier Lopez',email: 'rainier.lopez@email.com',  initials: 'RL', role: 'Viewer', online: false }
-  ];
+  /* No demo household. The signed-in account fills this at runtime
+     (see applyUser() in app.js). */
+  var MEMBERS = [];
 
-  var WORKSPACES = [
-    { id: 'w1', name: 'The Lopez Household', sub: '4 members · You\'re the owner', icon: 'house', active: true },
-    { id: 'w2', name: 'Weekend crew',        sub: 'Friend group',                icon: 'friends', active: false }
-  ];
+  var WORKSPACES = [];
 
   /* ==================================================== CATEGORIES ======= */
   /* These are only a starting point — the user can rename them, add keywords
@@ -90,106 +84,21 @@
   ];
 
   /* ===================================================== LISTS ========== */
-  var LISTS = [
-    {
-      id: 'l1',
-      name: 'The weekly shop',
-      kind: 'grocery',
-      icon: 'cart',
-      tint: 'green',
-      shared: true,
-      aisle: 'Produce',
-      items: [
-        { id: 'i1', name: 'Avocados',           qty: { n: 2,  u: 'pcs' },   cat: 'produce', aisle: 'Produce', owner: 'm1', done: true  },
-        { id: 'i2', name: 'Cherry tomatoes',    qty: { n: 250, u: 'g' },     cat: 'produce', aisle: 'Produce', owner: 'm2', done: false },
-        { id: 'i3', name: 'Bananas',            qty: { n: 1,  u: 'bunch' }, cat: 'produce', aisle: 'Produce', owner: 'm1', done: false },
-        { id: 'i4', name: 'Fresh milk',         qty: { n: 1,  u: 'L' },     cat: 'dairy',   aisle: 'Dairy & eggs', owner: 'm3', done: true  },
-        { id: 'i5', name: 'Free-range eggs',    qty: { n: 1,  u: 'dozen' }, cat: 'dairy',   aisle: 'Dairy & eggs', owner: 'm3', done: false },
-        { id: 'i6', name: 'Sourdough bread',    qty: { n: 1,  u: 'loaf' },  cat: 'bakery',  aisle: 'Bakery', owner: 'm2', done: false },
-        { id: 'i7', name: 'Dishwashing liquid', qty: { n: 1,  u: 'bottle' },cat: 'cleaning',aisle: 'Cleaning', owner: 'm4', done: false },
-        { id: 'i8', name: 'Laundry detergent',  qty: { n: 1,  u: 'pouch' }, cat: 'cleaning',aisle: 'Cleaning', owner: 'm4', done: false }
-      ]
-    },
-    {
-      id: 'l2',
-      name: 'Household tasks',
-      kind: 'tasks',
-      icon: 'tasks',
-      tint: 'gold',
-      shared: true,
-      aisle: 'Chores',
-      items: [
-        { id: 't1', name: 'Take recycling out',       qty: { n: 1, u: 'pcs' }, aisle: 'Chores', owner: 'm3', done: false },
-        { id: 't2', name: 'Book the plumber',         qty: { n: 1, u: 'pcs' }, aisle: 'Chores', owner: 'm1', done: false }
-      ]
-    },
-    {
-      id: 'l3',
-      name: 'Birthday dinner',
-      kind: 'event',
-      icon: 'cake',
-      tint: 'blue',
-      shared: true,
-      aisle: 'Party',
-      items: [
-        { id: 'e1', name: "Shane's birthday cake", qty: { n: 1, u: 'pcs' },    aisle: 'Party', owner: 'm1', done: false },
-        { id: 'e2', name: 'Sparkling cider',       qty: { n: 2, u: 'bottle' },aisle: 'Party', owner: 'm2', done: false },
-        { id: 'e3', name: 'Balloon bouquet',        qty: { n: 1, u: 'bunch' }, aisle: 'Party', owner: 'm2', done: false },
-        { id: 'e4', name: 'Dinner plates',          qty: { n: 12, u: 'pcs' },  aisle: 'Party', owner: 'm3', done: false },
-        { id: 'e5', name: 'Grocery top-up',         qty: { n: 1, u: 'pcs' },   aisle: 'Party', owner: 'm4', done: false },
-        { id: 'e6', name: 'Playlist + speakers',    qty: { n: 1, u: 'pcs' },   aisle: 'Party', owner: 'm1', done: false }
-      ]
-    },
-    {
-      id: 'l4',
-      name: 'Pantry & Inventory',
-      kind: 'inventory',
-      icon: 'box',
-      tint: 'navy',
-      shared: true,
-      aisle: 'Pantry',
-      items: [
-        { id: 'p1', name: 'Rice (5 kg)',         qty: { n: 1, u: 'bag' },   aisle: 'Pantry', owner: 'm1', done: false },
-        { id: 'p2', name: 'Cooking oil',         qty: { n: 2, u: 'bottle' }, aisle: 'Pantry', owner: 'm3', done: false },
-        { id: 'p3', name: 'Instant coffee',     qty: { n: 1, u: 'can' },    aisle: 'Pantry', owner: 'm4', done: false }
-      ]
-    }
-  ];
+  /* The app starts empty. The first list is created for whichever account
+     signs in first -- see ensureStarterState() in app.js. */
+  var LISTS = [];
 
   /* ---------------------------------------------------------- pantry */
-  /* The household inventory: what is already on the shelves. Checking an
-     item off the shopping list tops this up (or adds a new line). */
-  var PANTRY = [
-    { id: 'pa1', name: 'Rice (5 kg)',           qty: { n: 1, u: 'bag' },  cat: 'grains',    expiry: 'Long shelf life',   level: 'full' },
-    { id: 'pa2', name: 'Cooking oil',           qty: { n: 2, u: 'bottle' },cat: 'condiments',expiry: 'Best before 14 Nov', level: 'full' },
-    { id: 'pa3', name: 'Instant coffee',        qty: { n: 1, u: 'can' },   cat: 'beverages', expiry: 'Best before 02 Dec', level: 'low'  },
-    { id: 'pa4', name: 'Canned sardines',       qty: { n: 6, u: 'can' },   cat: 'canned',    expiry: 'Best before 25 Dec', level: 'full' },
-    { id: 'pa5', name: 'All-purpose seasoning',qty: { n: 1, u: 'bottle' },cat: 'condiments',expiry: 'Best before 09 Nov', level: 'low'  }
-  ];
+  var PANTRY = [];
 
   /* ---------------------------------------------------------- life admin */
-  var LIFE_ADMIN = [
-    { id: 'la1', name: 'Take recycling out',       when: 'Today', owner: 'm3', done: false },
-    { id: 'la2', name: "Pick up Shane's birthday cake", when: 'Today', owner: 'm1', done: false },
-    { id: 'la3', name: 'Confirm dinner reservation', when: 'Tomorrow', owner: 'm2', done: false }
-  ];
+  var LIFE_ADMIN = [];
 
-  /* ------------------------------------------------------------ calendar */
-  var EVENTS = [
-    { id: 'ev1', date: iso(TODAY),        time: '10:00 AM', title: 'The weekly grocery run', kind: 'list',  chip: 'The weekly shop',   listId: 'l1' },
-    { id: 'ev2', date: iso(dayOffset(1)), time: '6:00 PM',  title: "Shane's birthday dinner", kind: 'event', chip: 'Birthday dinner', listId: 'l3' },
-    { id: 'ev5', date: iso(dayOffset(3)), time: '4:00 PM',  title: 'Pantry restock',          kind: 'list',  chip: 'Pantry & Inventory', listId: 'l4' },
-    { id: 'ev3', date: iso(dayOffset(5)), time: '9:00 AM',  title: 'Household check-in',      kind: 'event', chip: 'Everyone',          listId: null  },
-    { id: 'ev4', date: iso(dayOffset(9)), time: '7:30 PM',  title: 'Halloween movie night',   kind: 'event', chip: 'Family',            listId: null  }
-  ];
+  /* ------------------------------------------------------------- events */
+  var EVENTS = [];
 
   /* ------------------------------------------------------------ activity */
-  var ACTIVITY = [
-    { id: 'a1', who: 'Shane Lopez',   initials: 'SL', text: 'Shared added cherry tomatoes', when: '2 min ago', icon: 'share' },
-    { id: 'a2', who: 'Qi Lopez',      initials: 'QL', text: 'Checked off oat milk',          when: '18 min ago', icon: 'check' },
-    { id: 'a3', who: 'Alex Lopez',    initials: 'AL', text: 'Pushed the grocery run',        when: '1 hr ago',   icon: 'push' },
-    { id: 'a4', who: 'Rainier Lopez', initials: 'RL', text: 'Joined the weekly shop',        when: 'Yesterday',  icon: 'join' }
-  ];
+  var ACTIVITY = [];
 
   /* ------------------------------------------------------------ spending */
   var SPENDING = {
@@ -197,38 +106,31 @@
     rangeOrder: ['w1', 'm1', 'm3', 'm6', 'y1'],
     rangeLabels: { w1: '1W', m1: '1M', m3: '3M', m6: '6M', y1: '1Y' },
     ranges: {
-      w1: { label: 'This week',  amount: 3450,   budget: 4500,   period: 'this week',  delta: -12 },
-      m1: { label: 'This month',  amount: 14260,  budget: 18000,  period: 'this month',  delta: -9  },
-      m3: { label: '3 months',    amount: 41890,  budget: 54000,  period: '3 months',    delta: -6  },
-      m6: { label: '6 months',    amount: 84220,  budget: 108000, period: '6 months',    delta: 4   },
-      y1: { label: '12 months',   amount: 168400, budget: 216000, period: '12 months',   delta: -11 }
+      w1: { label: 'This week',  amount: 0, budget: 4500,   period: 'this week',  delta: 0 },
+      m1: { label: 'This month', amount: 0, budget: 18000,  period: 'this month', delta: 0 },
+      m3: { label: '3 months',   amount: 0, budget: 54000,  period: '3 months',   delta: 0 },
+      m6: { label: '6 months',   amount: 0, budget: 108000, period: '6 months',   delta: 0 },
+      y1: { label: '12 months',  amount: 0, budget: 216000, period: '12 months',  delta: 0 }
     },
     mini: {
-      w1: { labels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'], values: [520, 780, 610, 940, 0, 0, 0], hot: 3 },
-      m1: { labels: ['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'], values: [3450, 3820, 3110, 3880], hot: 0 },
-      m3: { labels: ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'], values: [13400, 14260, 15180, 12940, 16210, 14980], hot: 4 },
-      m6: { labels: ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'], values: [13100, 13400, 14260, 15180, 12940, 16210], hot: 5 },
-      y1: { labels: ['Q1', 'Q2', 'Q3', 'Q4'], values: [41200, 43800, 45180, 38220], hot: 2 }
+      w1: { labels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'], values: [0, 0, 0, 0, 0, 0, 0], hot: 0 },
+      m1: { labels: ['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'], values: [0, 0, 0, 0], hot: 0 },
+      m3: { labels: ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'], values: [0, 0, 0, 0, 0, 0], hot: 0 },
+      m6: { labels: ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'], values: [0, 0, 0, 0, 0, 0], hot: 0 },
+      y1: { labels: ['Q1', 'Q2', 'Q3', 'Q4'], values: [0, 0, 0, 0], hot: 0 }
     },
     chart: {
       labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-      produce: [420, 610, 380, 520, 300, 640, 260],
-      dairy:   [180, 240, 160, 210, 150, 280, 140],
-      other:   [220, 310, 240, 280, 190, 350, 220]
+      produce: [0, 0, 0, 0, 0, 0, 0],
+      dairy:   [0, 0, 0, 0, 0, 0, 0],
+      other:   [0, 0, 0, 0, 0, 0, 0]
     },
-    breakdown: [
-      { name: 'Produce',        amount: 1105, pct: 32 },
-      { name: 'Dairy & eggs',   amount: 860,  pct: 25 },
-      { name: 'Meat & poultry', amount: 690,  pct: 20 },
-      { name: 'Bakery',         amount: 415,  pct: 12 },
-      { name: 'Cleaning',       amount: 245,  pct: 7  },
-      { name: 'Snacks',         amount: 135,  pct: 4  }
-    ],
+    breakdown: [],
     stats: [
-      { label: 'This week',     value: '₱3,450',  delta: '12% less than last week',  dir: 'down', icon: 'wallet' },
-      { label: 'Average trip',  value: '₱690',    delta: '4 trips this week',        dir: 'down', icon: 'cart' },
-      { label: 'Items bought',  value: '46',      delta: '8 more than last week',    dir: 'up',   icon: 'box' },
-      { label: 'Budget left',   value: '₱1,050',  delta: '23% of the weekly cap',    dir: 'down', icon: 'chart' }
+      { label: 'This week',    value: '\u20b10', delta: 'No shopping logged yet', dir: 'flat', icon: 'wallet' },
+      { label: 'Average trip', value: '\u20b10', delta: 'No trips yet',            dir: 'flat', icon: 'cart' },
+      { label: 'Items bought', value: '0',        delta: 'Nothing checked off yet', dir: 'flat', icon: 'box' },
+      { label: 'Budget left',  value: '\u20b14,500', delta: 'Weekly cap untouched', dir: 'flat', icon: 'chart' }
     ]
   };
 
@@ -469,21 +371,8 @@
     { name: 'Baking soda',          cat: 'household', n: 1,  u: 'box',    alt: 'bicarbonate' }
   ];
 
-  /* What this household has bought before — surfaced first in the suggestions. */
-  var HISTORY = [
-    { name: 'Dishwashing liquid', cat: 'cleaning',  n: 1,   u: 'bottle', times: 6, when: '2 weeks ago' },
-    { name: 'Laundry detergent',   cat: 'cleaning',  n: 1,   u: 'pouch',  times: 4, when: '1 week ago' },
-    { name: 'Paper towels',        cat: 'cleaning',  n: 1,   u: 'pack',   times: 3, when: '3 weeks ago' },
-    { name: 'Oat milk',            cat: 'dairy',     n: 1,   u: 'L',      times: 9, when: '4 days ago' },
-    { name: 'Free-range eggs',     cat: 'dairy',     n: 1,   u: 'dozen',  times: 5, when: '3 days ago' },
-    { name: 'Cherry tomatoes',     cat: 'produce',   n: 250, u: 'g',      times: 7, when: '2 days ago' },
-    { name: 'Bananas',             cat: 'produce',   n: 1,   u: 'bunch',  times: 11, when: 'yesterday' },
-    { name: 'Sourdough bread',     cat: 'bakery',    n: 1,   u: 'loaf',   times: 8, when: '2 days ago' },
-    { name: 'Chicken breast',      cat: 'meat',      n: 500, u: 'g',      times: 2, when: '1 week ago' },
-    { name: 'Regular milled rice', cat: 'grains',    n: 5,   u: 'kg',     times: 3, when: '1 week ago' },
-    { name: 'Calamansi',           cat: 'produce',   n: 1,   u: 'kg',     times: 5, when: '2 days ago' },
-    { name: 'Canned sardines',     cat: 'canned',    n: 1,   u: 'can',    times: 6, when: '3 days ago' }
-  ];
+  /* Populated from what the account actually checks off. */
+  var HISTORY = [];
 
   global.BiliList = {
     NOW: NOW,
