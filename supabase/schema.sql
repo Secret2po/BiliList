@@ -79,9 +79,34 @@ as $$
   );
 $$;
 
+-- called by the app just before sign-up. Returns both answers in one round trip:
+--   taken       -> is this password already used by an account?
+--   fingerprint -> the value the client passes to signUp() so the trigger above
+--                  can re-check it server side
+create or replace function public.password_claim(p_password text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_fp text;
+begin
+  v_fp := public.password_fingerprint(p_password);
+  return jsonb_build_object(
+    'taken', exists (
+      select 1 from public.password_registry r where r.fingerprint = v_fp
+    ),
+    'fingerprint', v_fp
+  );
+end;
+$$;
+
 revoke all on function public.password_fingerprint(text) from public, anon, authenticated;
-revoke all on function public.password_is_taken(text) from public;
-grant execute on function public.password_is_taken(text) to anon, authenticated;
+revoke all on function public.password_is_taken(text) from public, anon, authenticated;
+revoke all on function public.password_claim(text) from public;
+grant execute on function public.password_claim(text) to anon, authenticated;
 
 -- enforced server side: if a client skips the pre-check and posts a
 -- fingerprint that is already registered, the sign-up is rejected.

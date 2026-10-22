@@ -13,10 +13,14 @@
   var url = (CONFIG.supabaseUrl || '').trim();
   var key = (CONFIG.supabaseAnonKey || '').trim();
 
-  var configured = !!(url && key && url.indexOf('YOUR-PROJECT') === -1 && key.indexOf('YOUR-ANON') === -1);
-  var client = null;
+  var hasUrl = !!url && url.indexOf('YOUR-PROJECT') === -1;
+  var hasKey = !!key && key.indexOf('PASTE-') === -1 && key.indexOf('YOUR-ANON') === -1;
 
-  if (configured && global.supabase && global.supabase.createClient) {
+  var configured = hasUrl && hasKey && !!global.supabase && !!global.supabase.createClient;
+  var client = null;
+  var initError = '';
+
+  if (configured) {
     try {
       client = global.supabase.createClient(url, key, {
         auth: {
@@ -27,14 +31,19 @@
       });
     } catch (e) {
       client = null;
-      configured = false;
+      initError = (e && e.message) || 'Could not create the Supabase client.';
     }
+  } else if (hasUrl && hasKey && !global.supabase) {
+    initError = 'The Supabase SDK did not load. Check your internet connection and refresh.';
   }
 
   global.BiliSupabase = {
     client: client,
     isConfigured: !!client,
     mode: client ? 'supabase' : 'demo',
-    url: url
+    url: url,
+    hasUrl: hasUrl,
+    hasKey: hasKey,
+    initError: initError
   };
 })(window);

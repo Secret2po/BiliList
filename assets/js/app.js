@@ -1726,18 +1726,16 @@
   }
 
   /* ---------------------------------------------------------- supabase ops */
-  function fingerprintPassword(pw) {
-    if (!S.client) return Promise.resolve(null);
-    return S.client.rpc('password_fingerprint', { p_password: pw })
-      .then(function (r) { return r && r.data ? r.data : null; })
-      .catch(function () { return null; });
-  }
-
-  function passwordAlreadyUsed(pw) {
-    if (!S.client) return Promise.resolve(false);
-    return S.client.rpc('password_is_taken', { p_password: pw })
-      .then(function (r) { return !!(r && r.data); })
-      .catch(function () { return false; });
+  /* One round trip: is this password already in use, and what is the
+     fingerprint the sign-up trigger needs? */
+  function claimPassword(pw) {
+    if (!S.client) return Promise.resolve({ taken: false, fingerprint: null });
+    return S.client.rpc('password_claim', { p_password: pw })
+      .then(function (r) {
+        var d = (r && r.data) || {};
+        return { taken: !!d.taken, fingerprint: d.fingerprint || null };
+      })
+      .catch(function () { return { taken: false, fingerprint: null }; });
   }
 
   function sendCode(email) {
@@ -1789,24 +1787,29 @@
 
   function signUpWithPassword(email, pw) {
     if (!S.client) { signInDemo(); return; }
-    passwordAlreadyUsed(pw).then(function (taken) {
-      if (taken) {
+    claimPassword(pw).then(function (claim) {
+      if (claim.taken) {
         authError('err-pass', 'That password is already used by another account. Please pick a different one.');
         return;
       }
-      fingerprintPassword(pw).then(function (fp) {
-        var data = { full_name: email.split('@')[0] };
-        if (fp) data.password_fingerprint = fp;
-        S.client.auth.signUp({ email: email, password: pw, options: { data: data, emailRedirectTo: window.location.origin + window.location.pathname } })
-          .then(function (r) {
-            if (r.error) { authError('err-pass', r.error.message); return; }
-            if (r.data.session) { onSignedIn(r.data.user); return; }
-            /* email confirmation is on -> finish with the code */
-            auth.pendingEmail = email;
-            setAuthMode('code');
-            authNote('Account created. We sent a 6-digit code to ' + email + ' to confirm it.', 'ok');
-          }).catch(function (e) { authError('err-pass', e.message); });
-      });
+      var data = { full_name: email.split('@')[0] };
+      if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
+      S.client.auth.signUp({ email: email, password: pw, options: { data: data, emailRedirectTo: window.location.origin + window.location.pathname } })
+        .then(function (r) {
+          if (r.error) {
+            if (/PASSWORD_ALREADY_IN_USE/i.test(r.error.message)) {
+              authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+              return;
+            }
+            authError('err-pass', r.error.message);
+            return;
+          }
+          if (r.data.session) { onSignedIn(r.data.user); return; }
+          /* email confirmation is on -> finish with the code */
+          auth.pendingEmail = email;
+          setAuthMode('code');
+          authNote('Account created. We sent a 6-digit code to ' + email + ' to confirm it.', 'ok');
+        }).catch(function (e) { authError('err-pass', e.message); });
     });
   }
 
@@ -2345,7 +2348,15 @@
 
     setAuthMode('signin');
     if (!S.client) {
-      authNote('Demo mode — data is stored in this browser only. Add your Supabase URL and anon key in assets/js/config.js to turn on real accounts.', 'info');
+      if (S.initError) {
+        authNote(S.initError, 'error');
+      } else if (S.hasUrl && !S.hasKey) {
+        authNote('Supabase project found, but the anon key is still missing. Paste it into assets/js/config.js to switch off demo mode and start sending real emails.', 'info');
+      } else if (S.hasUrl && S.hasKey) {
+        authNote('The Supabase SDK did not load. Check your internet connection, then refresh the page.', 'error');
+      } else {
+        authNote('Demo mode — data is stored in this browser only. Add your Supabase URL and anon key in assets/js/config.js to turn on real accounts.', 'info');
+      }
     }
 
     window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S };

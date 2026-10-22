@@ -72,7 +72,7 @@ For the 6-digit code to arrive you need an email provider:
 **Sign in** — email + password → `signInWithPassword()`.
 
 **Create account** — email + password → the app first calls
-`password_is_taken()` so the user gets *"That password is already used by
+`password_claim()` so the user gets *"That password is already used by
 another account"* **before** anything is created. It then signs up with a
 password fingerprint that the database trigger re-checks, so a password can
 only ever belong to one account.
