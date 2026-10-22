@@ -64,10 +64,11 @@ For the 6-digit code to arrive you need an email provider:
 3. Under **Authentication → URL Configuration**, set **Site URL** to
    `http://127.0.0.1:8123` and add `http://localhost:8123` to the redirect
    allow list. Add your real domain when you deploy.
-4. **Add the code to the email template.** Supabase's stock "Magic Link"
-   template only contains a link, so the 6-digit code never appears. Go to
-   **Authentication → Emails → Magic Link** and put `{{ .Token }}` in the body,
-   for example:
+4. **Add the code to the email templates.** Supabase's stock templates only
+   contain a link, so the 6-digit code never appears. Go to
+   **Authentication → Emails** and put `{{ .Token }}` in the body of
+   **Confirm signup** and **Reset password** (and **Magic Link** if you use
+   it), for example:
 
    ```html
    <h2>Your BiliLIST code</h2>
@@ -75,24 +76,29 @@ For the 6-digit code to arrive you need an email provider:
    <p style="font-size:28px;letter-spacing:6px"><b>{{ .Token }}</b></p>
    ```
 
-   Do the same for **Confirm signup** if you want the confirmation email to
-   show a code as well.
-
 ---
 
 ## How the sign-in works
 
 **Sign in** — email + password → `signInWithPassword()`.
 
-**Create account** — email + password → the app first calls
-`password_claim()` so the user gets *"That password is already used by
-another account"* **before** anything is created. It then signs up with a
-password fingerprint that the database trigger re-checks, so a password can
-only ever belong to one account.
+**Create account** — username, email, password and confirm password. Before
+anything is created the app checks `username_available()` and
+`password_claim()` so the user gets *"That username is taken"* or *"That
+password is already used by another account"* immediately. It then signs up
+with a password fingerprint that the database trigger re-checks, so a password
+can only ever belong to one account.
 
-**Use a code** — enter the email → Supabase emails a 6-digit code
-(`signInWithOtp`) → the code is verified with `verifyOtp()`. The same tab also
-handles **email confirmation** after sign-up and **password reset**.
+**Verify your email** — the same screen becomes a second step straight after
+sign-up: the email is locked, and the user types the 6-digit code Supabase
+emailed them (`verifyOtp()` with `type: 'signup'`). There is a "Send a new
+code" link. This step is not a tab — it only appears when there is a
+verification outstanding.
+
+**Forgot password?** — asks Supabase for a reset code
+(`resetPasswordForEmail`), then shows the same code step with
+`type: 'recovery'`, followed by a "Set a new password" step
+(`updateUser({ password })`).
 
 ---
 

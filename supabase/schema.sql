@@ -165,10 +165,19 @@ create trigger trg_register_password_fingerprint
 -- --------------------------------------------------------------------------
 create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
+  username   text,
   full_name  text,
   avatar     text,
   created_at timestamptz not null default now()
 );
+
+-- safe to re-run on a database created by an earlier version of this file
+alter table public.profiles add column if not exists username text;
+
+-- usernames are unique regardless of case
+create unique index if not exists profiles_username_key
+  on public.profiles (lower(username))
+  where username is not null;
 
 create table if not exists public.workspaces (
   id         uuid primary key default gen_random_uuid(),
@@ -303,6 +312,23 @@ grant execute on function public.is_member(uuid)     to authenticated;
 grant execute on function public.member_role(uuid)   to authenticated;
 grant execute on function public.can_edit(uuid)      to authenticated;
 
+-- is this username free? called by the sign-up form before creating the account
+create or replace function public.username_available(p_username text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select not exists (
+    select 1 from public.profiles
+    where lower(username) = lower(trim(p_username))
+  );
+$$;
+
+revoke all on function public.username_available(text) from public;
+grant execute on function public.username_available(text) to anon, authenticated;
+
 -- --------------------------------------------------------------------------
 --  5. Triggers
 -- --------------------------------------------------------------------------
@@ -331,11 +357,13 @@ as $$
 declare
   v_ws uuid;
   v_name text;
+  v_username text;
 begin
   v_name := coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1));
+  v_username := nullif(trim(coalesce(new.raw_user_meta_data ->> 'username', '')), '');
 
-  insert into public.profiles (id, full_name, avatar)
-  values (new.id, v_name, upper(left(coalesce(v_name, 'U'), 1)))
+  insert into public.profiles (id, username, full_name, avatar)
+  values (new.id, v_username, v_name, upper(left(coalesce(v_name, 'U'), 1)))
   on conflict (id) do nothing;
 
   insert into public.workspaces (name, kind, owner_id)

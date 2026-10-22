@@ -1627,8 +1627,12 @@
   /* =============================== AUTH ================================== */
   var S = window.BiliSupabase || { client: null, isConfigured: false, mode: 'demo' };
 
+  /* step: signin | signup | verify | newpass
+     "verify" is not a tab — it is the email-confirmation step that follows a
+     sign-up, and also the step used by "Forgot password?". */
   var auth = {
-    mode: 'signin',        /* signin | signup | code */
+    step: 'signin',
+    purpose: 'signup',      /* signup | recovery */
     pendingEmail: '',
     user: null
   };
@@ -1644,50 +1648,78 @@
   }
 
   /* ------------------------------------------------------ auth screen UI */
-  function setAuthMode(mode) {
-    auth.mode = mode;
-    var isCode = mode === 'code';
-    var isSignup = mode === 'signup';
+  function setAuthStep(step) {
+    auth.step = step;
 
+    var isSignin = step === 'signin';
+    var isSignup = step === 'signup';
+    var isVerify = step === 'verify';
+    var isNewPass = step === 'newpass';
+
+    /* the tab strip only exists for the two entry points */
+    $('#auth-tabs').hidden = isVerify || isNewPass;
     $$('#auth-tabs .auth-tab').forEach(function (b) {
-      b.classList.toggle('is-active', b.dataset.authTab === mode);
+      b.classList.toggle('is-active', b.dataset.authTab === (isSignup ? 'signup' : 'signin'));
     });
 
+    /* which fields are on screen */
+    $('#field-username').hidden = !isSignup;
+    $('#field-password').hidden = isVerify;
+    $('#field-confirm').hidden = !(isSignup || isNewPass);
+    $('#field-code').hidden = !isVerify;
+    $('#row-remember').hidden = !isSignin;
+
     var heading = $('#login-heading'), sub = $('#login-sub'), btn = $('#btn-login');
-    if (isCode) {
-      heading.textContent = 'Check your inbox';
-      sub.textContent = 'Enter your email and we will send you a one-time code.';
-      btn.querySelector('span').textContent = 'Send me a code';
-      $('#field-password').hidden = true;
-      $('#row-remember').hidden = true;
-      $('#field-code').hidden = !auth.pendingEmail;
-      $('#code-hint').textContent = auth.pendingEmail
-        ? 'We sent a code to ' + auth.pendingEmail
-        : 'We will email you a code to confirm your account.';
-      $('#auth-secondary').innerHTML = '<span>Have a password?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
+    var label = $('#pass-label'), hint = $('#pass-hint');
+
+    if (isSignin) {
+      heading.textContent = 'Welcome back';
+      sub.textContent = 'Your groceries, to-dos, and everyday plans. Right where you left them.';
+      btn.querySelector('span').textContent = 'Sign in';
+      label.textContent = 'Password';
+      hint.textContent = '8 characters minimum.';
+      $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Create one</a>';
     } else if (isSignup) {
       heading.textContent = 'Create your account';
       sub.textContent = 'Start a shared list with the people you live, shop or plan with.';
       btn.querySelector('span').textContent = 'Create account';
-      $('#field-password').hidden = false;
-      $('#row-remember').hidden = true;
-      $('#field-code').hidden = true;
+      label.textContent = 'Password';
+      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
       $('#auth-secondary').innerHTML = '<span>Already have an account?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
+    } else if (isVerify) {
+      heading.textContent = auth.purpose === 'recovery' ? 'Reset your password' : 'Verify your email';
+      sub.textContent = auth.purpose === 'recovery'
+        ? 'Enter the code we emailed you, then choose a new password.'
+        : 'One last step — enter the code we emailed you to confirm your account.';
+      btn.querySelector('span').textContent = auth.purpose === 'recovery' ? 'Continue' : 'Verify email';
+      $('#code-hint').textContent = auth.pendingEmail
+        ? 'We sent a 6-digit code to ' + auth.pendingEmail
+        : 'We sent you a 6-digit code.';
+      $('#auth-secondary').innerHTML = '<span>Changed your mind?</span> <a class="link-green" href="#" id="link-signin">Back to sign in</a>';
     } else {
-      heading.textContent = 'Welcome back';
-      sub.textContent = 'Your groceries, to-dos, and everyday plans. Right where you left them.';
-      btn.querySelector('span').textContent = 'Sign in';
-      $('#field-password').hidden = false;
-      $('#row-remember').hidden = false;
-      $('#field-code').hidden = true;
-      $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Create one</a>';
+      heading.textContent = 'Set a new password';
+      sub.textContent = 'Your code checked out. Pick a new password for your account.';
+      btn.querySelector('span').textContent = 'Save password';
+      label.textContent = 'New password';
+      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      $('#auth-secondary').innerHTML = '';
     }
+
+    /* the email is locked while a code is outstanding */
+    var em = $('#f-email');
+    var locked = isVerify || isNewPass;
+    em.readOnly = locked;
+    $('#field-email').classList.toggle('is-readonly', locked);
+
     clearAuthErrors();
   }
 
   function clearAuthErrors() {
-    ['err-email', 'err-pass', 'err-code'].forEach(function (id) {
+    ['err-username', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('show');
+    });
+    ['f-username', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+      var el = $('#' + id); if (el) el.classList.remove('invalid');
     });
     var note = $('#auth-note');
     if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
@@ -1696,10 +1728,14 @@
   function authError(field, message) {
     var el = $('#' + field);
     if (!el) return;
+    var input = { 'err-username': 'f-username', 'err-email': 'f-email', 'err-pass': 'f-pass', 'err-pass2': 'f-pass2', 'err-code': 'f-code' }[field];
+    if (field === 'err-username') el.textContent = message || 'Pick a username with 3–24 letters, numbers, dots or underscores.';
     if (field === 'err-email') el.textContent = message || 'Enter a valid email address, e.g. you@example.com';
     if (field === 'err-pass') el.textContent = message || 'Enter your password.';
+    if (field === 'err-pass2') el.textContent = message || 'The two passwords do not match.';
     if (field === 'err-code') el.textContent = message || 'That code is not right. Check your email and try again.';
     el.classList.add('show');
+    if (input) { var i = $('#' + input); if (i) i.classList.add('invalid'); }
   }
 
   function authNote(message, kind) {
@@ -1725,6 +1761,22 @@
     return out;
   }
 
+  var USERNAME_RE = /^[a-zA-Z0-9._]{3,24}$/;
+
+  function usernameProblem(u) {
+    if (!u) return 'Choose a username.';
+    if (!USERNAME_RE.test(u)) return 'Use 3–24 letters, numbers, dots or underscores.';
+    if (/^[._]|[._]$/.test(u)) return 'A username cannot start or end with a dot or underscore.';
+    return '';
+  }
+
+  function usernameAvailable(u) {
+    if (!S.client) return Promise.resolve(true);
+    return S.client.rpc('username_available', { p_username: u })
+      .then(function (r) { return !(r && r.data === false); })
+      .catch(function () { return true; });
+  }
+
   /* ---------------------------------------------------------- supabase ops */
   /* One round trip: is this password already in use, and what is the
      fingerprint the sign-up trigger needs? */
@@ -1738,34 +1790,81 @@
       .catch(function () { return { taken: false, fingerprint: null }; });
   }
 
-  function sendCode(email) {
+  function redirectTo() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  /* "Forgot password?" -> email a reset code, then ask for it */
+  function startRecovery(email) {
+    auth.purpose = 'recovery';
     auth.pendingEmail = email;
-    setAuthMode('code');
+    setAuthStep('verify');
+    $('#f-code').value = '';
+    $('#f-code').focus();
+
     if (!S.client) {
-      authNote('Demo mode — no code was actually sent. Add your Supabase keys in assets/js/config.js to enable real sign-in.', 'info');
+      authNote('Demo mode — no reset email was sent. Add your Supabase keys in assets/js/config.js to enable real emails.', 'info');
       return;
     }
-    S.client.auth.signInWithOtp({
-      email: email,
-      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + window.location.pathname }
-    }).then(function (r) {
-      if (r.error) {
-        authNote('We could not send the code: ' + r.error.message, 'error');
-      } else {
-        authNote('We sent a 6-digit code to ' + email + '. Check your inbox.', 'ok');
-      }
-    }).catch(function (e) {
-      authNote('We could not send the code: ' + e.message, 'error');
-    });
+    S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
+      .then(function (r) {
+        if (r && r.error) { authNote('We could not send the reset code: ' + r.error.message, 'error'); return; }
+        authNote('If an account exists for ' + email + ', a 6-digit reset code is on its way.', 'ok');
+      }).catch(function (e) { authNote('We could not send the reset code: ' + e.message, 'error'); });
+  }
+
+  function resendCode() {
+    var email = auth.pendingEmail;
+    if (!email) return;
+    if (!S.client) { authNote('Demo mode — no email was sent.', 'info'); return; }
+
+    var req = auth.purpose === 'recovery'
+      ? S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
+      : S.client.auth.resend({ type: 'signup', email: email });
+
+    req.then(function (r) {
+      if (r && r.error) { authNote('We could not send a new code: ' + r.error.message, 'error'); return; }
+      authNote('Sent a new code to ' + email + '.', 'ok');
+    }).catch(function (e) { authNote('We could not send a new code: ' + e.message, 'error'); });
   }
 
   function verifyCode(email, token) {
     if (!S.client) { signInDemo(); return; }
-    S.client.auth.verifyOtp({ email: email, token: token, type: 'email' })
+
+    var type = auth.purpose === 'recovery' ? 'recovery' : 'signup';
+
+    S.client.auth.verifyOtp({ email: email, token: token, type: type })
       .then(function (r) {
-        if (r.error) { authError('err-code', r.error.message); return; }
+        if (r.error) {
+          if (/expired|invalid|incorrect/i.test(r.error.message)) {
+            authError('err-code', 'That code is not right or has expired. Ask for a new one.');
+          } else {
+            authError('err-code', r.error.message);
+          }
+          return;
+        }
+
+        if (auth.purpose === 'recovery') {
+          auth.user = r.data.user || null;
+          $('#f-pass').value = '';
+          $('#f-pass2').value = '';
+          setAuthStep('newpass');
+          authNote('Email verified. Choose a new password to finish.', 'ok');
+          $('#f-pass').focus();
+          return;
+        }
+
         onSignedIn(r.data.user);
       }).catch(function (e) { authError('err-code', e.message); });
+  }
+
+  function saveNewPassword(pw) {
+    if (!S.client) { signInDemo(); return; }
+    S.client.auth.updateUser({ password: pw })
+      .then(function (r) {
+        if (r.error) { authError('err-pass', r.error.message); return; }
+        onSignedIn(r.data.user);
+      }).catch(function (e) { authError('err-pass', e.message); });
   }
 
   function signInWithPassword(email, pw) {
@@ -1774,8 +1873,11 @@
       .then(function (r) {
         if (r.error) {
           if (/not confirmed/i.test(r.error.message)) {
-            authNote('Your email is not confirmed yet. Send yourself a code to finish setting up.', 'info');
-            sendCode(email);
+            auth.purpose = 'signup';
+            auth.pendingEmail = email;
+            setAuthStep('verify');
+            $('#f-code').value = '';
+            resendCode();
             return;
           }
           authError('err-pass', r.error.message);
@@ -1785,31 +1887,54 @@
       }).catch(function (e) { authError('err-pass', e.message); });
   }
 
-  function signUpWithPassword(email, pw) {
+  function signUpWithPassword(username, email, pw) {
     if (!S.client) { signInDemo(); return; }
-    claimPassword(pw).then(function (claim) {
-      if (claim.taken) {
-        authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+
+    usernameAvailable(username).then(function (free) {
+      if (!free) {
+        authError('err-username', 'That username is taken. Try another one.');
+        $('#f-username').focus();
         return;
       }
-      var data = { full_name: email.split('@')[0] };
-      if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
-      S.client.auth.signUp({ email: email, password: pw, options: { data: data, emailRedirectTo: window.location.origin + window.location.pathname } })
-        .then(function (r) {
+
+      claimPassword(pw).then(function (claim) {
+        if (claim.taken) {
+          authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+          return;
+        }
+
+        var data = { username: username, full_name: username };
+        if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
+
+        S.client.auth.signUp({
+          email: email,
+          password: pw,
+          options: { data: data, emailRedirectTo: redirectTo() }
+        }).then(function (r) {
           if (r.error) {
-            if (/PASSWORD_ALREADY_IN_USE/i.test(r.error.message)) {
+            var m = r.error.message || '';
+            if (/PASSWORD_ALREADY_IN_USE/i.test(m)) {
               authError('err-pass', 'That password is already used by another account. Please pick a different one.');
-              return;
+            } else if (/already registered|duplicate/i.test(m)) {
+              authError('err-email', 'An account already uses this email. Sign in instead.');
+            } else {
+              authError('err-pass', m);
             }
-            authError('err-pass', r.error.message);
             return;
           }
+
+          /* confirmation turned off -> straight in */
           if (r.data.session) { onSignedIn(r.data.user); return; }
-          /* email confirmation is on -> finish with the code */
+
+          /* confirmation turned on -> ask for the emailed code */
+          auth.purpose = 'signup';
           auth.pendingEmail = email;
-          setAuthMode('code');
-          authNote('Account created. We sent a 6-digit code to ' + email + ' to confirm it.', 'ok');
+          setAuthStep('verify');
+          $('#f-code').value = '';
+          authNote('Account created. We emailed a 6-digit code to ' + email + '.', 'ok');
+          $('#f-code').focus();
         }).catch(function (e) { authError('err-pass', e.message); });
+      });
     });
   }
 
@@ -1833,29 +1958,47 @@
     e.preventDefault();
     clearAuthErrors();
 
+    var username = ($('#f-username').value || '').trim();
     var email = ($('#f-email').value || '').trim();
     var pw = $('#f-pass').value || '';
-    var code = ($('#f-code').value || '').trim();
+    var pw2 = $('#f-pass2').value || '';
+    var code = ($('#f-code').value || '').replace(/\D/g, '');
+
+    /* ---- step 2 of sign-up: the emailed code ---- */
+    if (auth.step === 'verify') {
+      if (!code) { authError('err-code', 'Enter the 6-digit code from your email.'); $('#f-code').focus(); return; }
+      if (code.length !== 6) { authError('err-code', 'The code is 6 digits long.'); $('#f-code').focus(); return; }
+      verifyCode(auth.pendingEmail, code);
+      return;
+    }
+
+    /* ---- step 3 of a password reset: the new password ---- */
+    if (auth.step === 'newpass') {
+      var np = passwordProblems(pw);
+      if (np.length) { authError('err-pass', np[0]); $('#f-pass').focus(); return; }
+      if (pw !== pw2) { authError('err-pass2'); $('#f-pass2').focus(); return; }
+      saveNewPassword(pw);
+      return;
+    }
 
     if (!validEmail(email)) { authError('err-email'); $('#f-email').focus(); return; }
 
-    if (auth.mode === 'code') {
-      if (auth.pendingEmail && auth.pendingEmail !== email) auth.pendingEmail = email;
-      if (!code) { authError('err-code', 'Enter the code we sent you.'); $('#f-code').focus(); return; }
-      if (!S.client) { signInDemo(); return; }
-      verifyCode(auth.pendingEmail || email, code);
+    if (auth.step === 'signup') {
+      var up = usernameProblem(username);
+      if (up) { authError('err-username', up); $('#f-username').focus(); return; }
+
+      var sp = passwordProblems(pw);
+      if (sp.length) { authError('err-pass', sp[0]); $('#f-pass').focus(); return; }
+      if (pw !== pw2) { authError('err-pass2'); $('#f-pass2').focus(); return; }
+
+      signUpWithPassword(username, email, pw);
       return;
     }
 
     var problems = passwordProblems(pw);
     if (problems.length) { authError('err-pass', problems[0]); $('#f-pass').focus(); return; }
 
-    if (auth.mode === 'signup') signUpWithPassword(email, pw);
-    else signInWithPassword(email, pw);
-  }
-
-  function setSignupMode(on) {
-    setAuthMode(on ? 'signup' : 'signin');
+    signInWithPassword(email, pw);
   }
 
   /* =============================== EVENTS ================================= */
@@ -1867,28 +2010,62 @@
       var tab = e.target.closest('[data-auth-tab]');
       if (!tab) return;
       e.preventDefault();
-      setAuthMode(tab.dataset.authTab);
+      setAuthStep(tab.dataset.authTab);
     });
 
-    $('#toggle-pass').addEventListener('click', function () {
-      var p = $('#f-pass');
-      var showing = p.type === 'text';
-      p.type = showing ? 'password' : 'text';
-      this.innerHTML = icon(showing ? 'eye' : 'eye-off');
-      this.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-    });
+    function bindReveal(btnId, inputId) {
+      var b = $('#' + btnId);
+      if (!b) return;
+      b.addEventListener('click', function () {
+        var p = $('#' + inputId);
+        var showing = p.type === 'text';
+        p.type = showing ? 'password' : 'text';
+        this.innerHTML = icon(showing ? 'eye' : 'eye-off');
+        this.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      });
+    }
+    bindReveal('toggle-pass', 'f-pass');
+    bindReveal('toggle-pass2', 'f-pass2');
 
     document.addEventListener('click', function (e) {
-      var su = e.target.closest('#link-signup');
-      if (su) { e.preventDefault(); setAuthMode('signup'); return; }
+      var su = e.target.closest('#link-signup') || e.target.closest('#link-signup-top');
+      if (su) {
+        e.preventDefault();
+        if (auth.step === 'verify' || auth.step === 'newpass') {
+          /* "start over" — abandon the pending code */
+          auth.purpose = 'signup';
+          auth.pendingEmail = '';
+          $('#f-code').value = '';
+        }
+        setAuthStep('signup');
+        return;
+      }
+
       var si = e.target.closest('#link-signin');
-      if (si) { e.preventDefault(); setAuthMode('signin'); return; }
+      if (si) {
+        e.preventDefault();
+        auth.purpose = 'signup';
+        auth.pendingEmail = '';
+        $('#f-code').value = '';
+        $('#f-pass').value = '';
+        $('#f-pass2').value = '';
+        setAuthStep('signin');
+        return;
+      }
+
+      var rs = e.target.closest('#link-resend');
+      if (rs) {
+        e.preventDefault();
+        resendCode();
+        return;
+      }
+
       var fg = e.target.closest('#link-forgot');
       if (fg) {
         e.preventDefault();
         var em = ($('#f-email').value || '').trim();
-        if (!validEmail(em)) { authError('err-email'); return; }
-        sendCode(em);
+        if (!validEmail(em)) { authError('err-email'); $('#f-email').focus(); return; }
+        startRecovery(em);
         return;
       }
     });
@@ -2346,7 +2523,7 @@
       if (state.signedIn) showApp(); else showLogin();
     }
 
-    setAuthMode('signin');
+    setAuthStep('signin');
     if (!S.client) {
       if (S.initError) {
         authNote(S.initError, 'error');
@@ -2359,7 +2536,7 @@
       }
     }
 
-    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S };
+    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S, setAuthStep: setAuthStep };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

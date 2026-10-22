@@ -136,17 +136,39 @@ svg { display: block; }
   grid-template-columns: 1fr 1.08fr; gap: 56px; align-items: center;
 }
 
-/* --- auth tabs (sign in / create account / use a code) --- */
+/* --- auth tabs (sign in / create account) --- */
 .auth-tabs {
   display: flex; gap: 4px; margin: 22px 0 18px; padding: 4px;
   background: var(--cream-100); border-radius: var(--r-sm); border: 1px solid var(--line-2);
 }
+.auth-tabs[hidden] { display: none; }
 .auth-tab {
   flex: 1; height: 36px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
   color: var(--muted); transition: .15s; white-space: nowrap; padding: 0 6px;
 }
 .auth-tab:hover { color: var(--ink); }
 .auth-tab.is-active { background: var(--white); color: var(--green-700); box-shadow: var(--sh-1); }
+
+/* fields toggled by the auth steps */
+.field[hidden], .form-row[hidden] { display: none; }
+
+/* when the tab strip is hidden (verify / new password) the form still needs
+   some air below the subtitle */
+.auth-tabs[hidden] ~ #login-form { margin-top: 22px; }
+
+/* the email is locked while a verification code is outstanding */
+.field.is-readonly .input { background: var(--cream-100); color: var(--muted); }
+.field.is-readonly label::after {
+  content: "  ·  locked while you verify"; font-weight: 500; color: var(--muted); font-size: 11px;
+}
+
+/* inline text button, e.g. "Send a new code" */
+.link-btn {
+  display: inline-block; margin-top: 8px; padding: 0; background: none;
+  border: 0; font-size: 12px; font-weight: 600; color: var(--green-700);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.link-btn:hover { color: var(--green-800); }
 
 .auth-note {
   display: flex; gap: 9px; align-items: flex-start; margin-bottom: 16px;
