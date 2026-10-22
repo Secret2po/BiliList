@@ -157,12 +157,14 @@
   ];
 
   /* ---------------------------------------------------------- pantry */
+  /* The household inventory: what is already on the shelves. Checking an
+     item off the shopping list tops this up (or adds a new line). */
   var PANTRY = [
-    { id: 'pa1', name: 'Rice (5 kg)',           qty: '1 sack',         expiry: 'Long shelf life',   level: 'full' },
-    { id: 'pa2', name: 'Cooking oil',           qty: '2 bottles',      expiry: 'Best before 14 Nov', level: 'full' },
-    { id: 'pa3', name: 'Instant coffee',        qty: '1 tin · 20 left',expiry: 'Best before 02 Dec',level: 'low'  },
-    { id: 'pa4', name: 'Canned sardines',       qty: '6 cans',         expiry: 'Best before 25 Dec', level: 'full' },
-    { id: 'pa5', name: 'All-purpose seasoning',qty: '1 bottle',       expiry: 'Best before 09 Nov', level: 'low'  }
+    { id: 'pa1', name: 'Rice (5 kg)',           qty: { n: 1, u: 'bag' },  cat: 'grains',    expiry: 'Long shelf life',   level: 'full' },
+    { id: 'pa2', name: 'Cooking oil',           qty: { n: 2, u: 'bottle' },cat: 'condiments',expiry: 'Best before 14 Nov', level: 'full' },
+    { id: 'pa3', name: 'Instant coffee',        qty: { n: 1, u: 'can' },   cat: 'beverages', expiry: 'Best before 02 Dec', level: 'low'  },
+    { id: 'pa4', name: 'Canned sardines',       qty: { n: 6, u: 'can' },   cat: 'canned',    expiry: 'Best before 25 Dec', level: 'full' },
+    { id: 'pa5', name: 'All-purpose seasoning',qty: { n: 1, u: 'bottle' },cat: 'condiments',expiry: 'Best before 09 Nov', level: 'low'  }
   ];
 
   /* ---------------------------------------------------------- life admin */

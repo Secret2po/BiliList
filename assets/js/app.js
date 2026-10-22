@@ -48,6 +48,7 @@
     activity: JSON.parse(JSON.stringify(D.activity)),
     members: JSON.parse(JSON.stringify(D.members)),
     categories: JSON.parse(JSON.stringify(D.categories)),
+    inventory: JSON.parse(JSON.stringify(D.pantry)),
     pending: [
       { email: 'mika.santos@email.com', role: 'Editor', sent: '2 days ago' }
     ],
@@ -176,9 +177,9 @@
     return '<div class="unit-picker" id="' + id + '">' + D.units.map(function (g) {
       return '<div class="up-group">' +
         '<span class="up-label">' + esc(g.group) + '</span>' +
-        g.units.map(function (u) {
+        '<div class="up-chips">' + g.units.map(function (u) {
           return '<button type="button" class="unit-chip' + (u.k === selected ? ' is-active' : '') + '" data-unit="' + u.k + '">' + esc(u.l) + '</button>';
-        }).join('') +
+        }).join('') + '</div>' +
       '</div>';
     }).join('') + '</div>';
   }
@@ -186,7 +187,7 @@
   function qtyText(q) {
     if (q == null) return '';
     if (typeof q === 'string') return q;
-    return q.n + ' ' + unitLabel(q.u);
+    return unitQty(unitDef(q.u), q.n);
   }
   /* "250 g" -> {n: 250, u: 'g'} */
   function parseQty(str) {
@@ -291,6 +292,7 @@
         events: state.events,
         members: state.members,
         categories: state.categories,
+        inventory: state.inventory,
         pending: state.pending,
         activeListId: state.activeListId
       }));
@@ -307,6 +309,7 @@
       if (data.events) state.events = data.events;
       if (data.members) state.members = data.members;
       if (data.categories) state.categories = data.categories;
+      if (data.inventory) state.inventory = data.inventory;
       if (data.pending) state.pending = data.pending;
       if (data.activeListId) state.activeListId = data.activeListId;
       state.signedIn = !!data.signedIn;
@@ -327,9 +330,14 @@
           it.cat = match || otherCatId();
         }
         if (typeof it.qty === 'string') it.qty = parseQty(it.qty);
-        if (!it.qty || typeof it.qty !== 'object') it.qty = { n: 1, u: 'pc' };
-        if (it.qty.u === 'run') it.qty.u = 'pc';
+        if (!it.qty || typeof it.qty !== 'object') it.qty = { n: 1, u: 'pcs' };
+        if (it.qty.u === 'run') it.qty.u = 'pcs';
       });
+    });
+    state.inventory.forEach(function (p) {
+      if (typeof p.qty === 'string') p.qty = parseQty(p.qty);
+      if (!p.qty || typeof p.qty !== 'object') p.qty = { n: 1, u: 'pcs' };
+      if (!p.cat) p.cat = guessCategory(p.name);
     });
   }
 
@@ -693,29 +701,84 @@
       return;
     }
 
-    var searchBox = '<div class="add-input add-search">' +
-      '<svg class="ic"><use href="#i-search"/></svg>' +
-      '<input class="input" id="add-search" placeholder="Search ' + D.catalogue.length + '+ Filipino products — e.g. dishwashing liquid" value="' + esc(m.query) + '" autocomplete="off">' +
+    var searchBox = '<div class="add-search">' +
+      '<div class="add-input">' +
+        '<svg class="ic"><use href="#i-search"/></svg>' +
+        '<input class="input" id="add-search" placeholder="Search ' + D.catalogue.length + '+ Filipino products — e.g. dishwashing liquid" value="' + esc(m.query) + '" autocomplete="off">' +
+      '</div>' +
     '</div>';
 
     box.innerHTML = head +
       '<div class="modal-body modal-body--add">' +
         searchBox +
-        suggestPanelHtml(m.query) +
+        '<div id="add-suggestions">' + suggestPanelHtml(m.query) + '</div>' +
       '</div>';
   }
 
-  /* the "Pantry & Inventory" tab shows what is already on the shelves */
+  /* only the suggestions part changes, so the search box keeps focus */
+  function renderAddSuggestions() {
+    var host = $('#add-suggestions');
+    if (!host) return;
+    host.innerHTML = suggestPanelHtml(state.addModal.query);
+  }
+
+  /* ---------------------------------------------------------- pantry */
+  /* The "Pantry & Inventory" tab is the household inventory: what is already
+     on the shelves. Checking an item off in To Buy tops it up. */
   function inventoryRows() {
-    return D.pantry.map(function (p) {
+    if (!state.inventory.length) {
+      return '<div class="empty-state">Nothing in the pantry yet.<br>Check items off your list and they will land here.</div>';
+    }
+    return state.inventory.map(function (p) {
       return '<div class="inv-row">' +
         '<span class="inv-ico' + (p.level === 'low' ? ' is-low' : '') + '">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
         '<span class="inv-name">' + esc(p.name) + '</span>' +
-        '<span class="inv-qty">' + esc(p.qty) + '</span>' +
-        '<span class="inv-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry) + '</span>' +
-        '<button class="inv-add" data-pantry="' + esc(p.name) + '">' + icon('plus') + ' Add to list</button>' +
+        '<span class="inv-qty">' + esc(qtyText(p.qty)) + '</span>' +
+        '<span class="inv-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry || 'On the shelf') + '</span>' +
+        '<button class="inv-add" data-pantry="' + esc(p.name) + '" data-pantry-cat="' + esc(p.cat || '') + '" data-pantry-n="' + p.qty.n + '" data-pantry-u="' + esc(p.qty.u) + '">' + icon('plus') + ' Add to list</button>' +
       '</div>';
     }).join('');
+  }
+
+  /* checking an item off puts it in the pantry: top up an existing line,
+     or create a new one */
+  function addToInventory(item) {
+    var key = item.name.toLowerCase().trim();
+    var existing = null;
+    state.inventory.forEach(function (p) {
+      if (!existing && p.name.toLowerCase().trim() === key) existing = p;
+    });
+    if (existing) {
+      if (existing.qty.u === item.qty.u) existing.qty.n += item.qty.n;
+      else existing.qty = { n: existing.qty.n, u: existing.qty.u };
+      item.pantryAdded = { merged: true, n: item.qty.n, u: item.qty.u, name: existing.name };
+      return existing.name + ' topped up to ' + qtyText(existing.qty);
+    }
+    var entry = {
+      id: 'inv' + Date.now(),
+      name: item.name,
+      qty: { n: item.qty.n, u: item.qty.u },
+      cat: item.cat,
+      expiry: 'Just bought',
+      level: 'full'
+    };
+    state.inventory.push(entry);
+    item.pantryAdded = { merged: false, n: item.qty.n, u: item.qty.u, id: entry.id };
+    return item.name + ' added to the pantry';
+  }
+
+  /* and un-checking takes it back out again */
+  function removeFromInventory(item) {
+    var a = item.pantryAdded;
+    if (!a) return;
+    if (a.merged) {
+      state.inventory.forEach(function (p) {
+        if (p.name === a.name && p.qty.u === a.u) p.qty.n = Math.max(0, p.qty.n - a.n);
+      });
+    } else {
+      state.inventory = state.inventory.filter(function (p) { return p.id !== a.id; });
+    }
+    item.pantryAdded = null;
   }
 
   function listCard() {
@@ -729,14 +792,30 @@
     var total = all.length;
     var pct = total ? Math.round((done / total) * 100) : 0;
 
-    /* the find-in-list search only filters what is already on the list */
+    /* the find-in-list search only filters what is already on the list,
+       and it looks across every tab */
     var q = state.listQuery.trim().toLowerCase();
     var matches = function (it) {
       if (!q) return true;
+      /* name and quantity only — matching the category name gave false
+         positives (searching "egg" matched everything in "Dairy & eggs") */
       return it.name.toLowerCase().indexOf(q) !== -1 ||
-             qtyText(it.qty).toLowerCase().indexOf(q) !== -1 ||
-             catName(it.cat).toLowerCase().indexOf(q) !== -1;
+             qtyText(it.qty).toLowerCase().indexOf(q) !== -1;
     };
+
+    /* if the active tab has no hits but another tab does, jump there */
+    if (q) {
+      var here = (tab === 'pantry' ? bought : toBuy).filter(matches).length;
+      var elsewhere = 0;
+      if (!here) {
+        elsewhere = (tab === 'pantry' ? toBuy : bought).filter(matches).length;
+        if (elsewhere) {
+          state.activeAisleTab = (tab === 'pantry' ? 'tobuy' : 'pantry');
+          tab = state.activeAisleTab;
+          toast('No match here — showing the ' + (tab === 'pantry' ? 'Pantry' : 'To Buy') + ' tab instead');
+        }
+      }
+    }
 
     var body = '';
     var shown = 0;
@@ -813,7 +892,10 @@
             : '') +
         '</div>' +
         (q ? '<span class="find-count">' + shown + ' of ' + total + '</span>' : '') +
-        '<button class="btn-add" data-act="open-add">' + icon('plus') + '<span>Add item</span></button>' +
+        /* you only add shopping items from the To Buy list */
+        (tab === 'tobuy'
+          ? '<button class="btn-add" data-act="open-add">' + icon('plus') + '<span>Add item</span></button>'
+          : '') +
       '</div>' +
 
       body +
@@ -1765,8 +1847,10 @@
 
     if (el.dataset.scat) {
       state.addCategory = el.dataset.scat;
-      refreshSuggestions();
-      renderListFooterBits();
+      if (state.addModal && state.addModal.open) {
+        if (!state.addQtyTouched) state.addQty = defaultQtyFor(state.addModal.query);
+        renderAddSuggestions();
+      }
       return;
     }
     if (el.dataset.sugName) {
@@ -1775,18 +1859,11 @@
     }
 
     if (el.dataset.pantry) {
-      var plist = activeList();
-      var pcat = guessCategory(el.dataset.pantry);
-      plist.items.push({
-        id: 'n' + Date.now(),
-        name: el.dataset.pantry,
-        qty: '1 pc',
-        cat: pcat,
-        aisle: catName(pcat),
-        owner: (state.members.filter(function (m) { return m.you; })[0] || state.members[0]).id,
-        done: false
-      });
-      save();
+      var pcat = el.dataset.pantryCat || guessCategory(el.dataset.pantry);
+      var pn = el.dataset.pantryN ? Number(el.dataset.pantryN) : 1;
+      var pu = el.dataset.pantryU || 'pcs';
+      pushItem(el.dataset.pantry, { n: pn, u: pu }, pcat);
+      render();
       toast('“' + el.dataset.pantry + '” added to ' + catName(pcat));
       return;
     }
@@ -1817,10 +1894,15 @@
       case 'toggle': {
         var row = el.closest('.item-row');
         var list = activeList();
+        var msg = null;
         list.items.forEach(function (it) {
-          if (it.id === row.dataset.id) it.done = !it.done;
+          if (it.id !== row.dataset.id) return;
+          it.done = !it.done;
+          if (it.done) msg = addToInventory(it);
+          else { removeFromInventory(it); msg = it.name + ' moved back to To Buy'; }
         });
         save(); render();
+        if (msg) toast(msg);
         break;
       }
       case 'del': {
@@ -1915,9 +1997,7 @@
     if (id === 'add-search') {
       state.addModal.query = t.value;
       if (!state.addQtyTouched) state.addQty = defaultQtyFor(t.value);
-      renderAddModal();
-      var box = $('#add-search');
-      if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+      renderAddSuggestions();
       return;
     }
 
