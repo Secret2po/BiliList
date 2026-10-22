@@ -1625,6 +1625,14 @@
   }
 
   /* =============================== AUTH ================================== */
+  var S = window.BiliSupabase || { client: null, isConfigured: false, mode: 'demo' };
+
+  var auth = {
+    mode: 'signin',        /* signin | signup | code */
+    pendingEmail: '',
+    user: null
+  };
+
   function showLogin() {
     $('#view-app').classList.add('hidden');
     $('#view-login').classList.remove('hidden');
@@ -1635,50 +1643,228 @@
     render();
   }
 
-  function setSignupMode(on) {
-    var h = $('#login-heading'), s = $('#login-sub'), alt = $('#login-alt'), btn = $('#btn-login');
-    if (on) {
-      h.textContent = 'Create your account';
-      s.textContent = 'Start a shared list with the people you live, shop or plan with.';
-      btn.innerHTML = 'Create account ' + icon('arrow-right');
-      alt.innerHTML = 'Already have an account? <a class="link-green" href="#" id="link-signin">Sign in</a>';
+  /* ------------------------------------------------------ auth screen UI */
+  function setAuthMode(mode) {
+    auth.mode = mode;
+    var isCode = mode === 'code';
+    var isSignup = mode === 'signup';
+
+    $$('#auth-tabs .auth-tab').forEach(function (b) {
+      b.classList.toggle('is-active', b.dataset.authTab === mode);
+    });
+
+    var heading = $('#login-heading'), sub = $('#login-sub'), btn = $('#btn-login');
+    if (isCode) {
+      heading.textContent = 'Check your inbox';
+      sub.textContent = 'Enter your email and we will send you a one-time code.';
+      btn.querySelector('span').textContent = 'Send me a code';
+      $('#field-password').hidden = true;
+      $('#row-remember').hidden = true;
+      $('#field-code').hidden = !auth.pendingEmail;
+      $('#code-hint').textContent = auth.pendingEmail
+        ? 'We sent a code to ' + auth.pendingEmail
+        : 'We will email you a code to confirm your account.';
+      $('#auth-secondary').innerHTML = '<span>Have a password?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
+    } else if (isSignup) {
+      heading.textContent = 'Create your account';
+      sub.textContent = 'Start a shared list with the people you live, shop or plan with.';
+      btn.querySelector('span').textContent = 'Create account';
+      $('#field-password').hidden = false;
+      $('#row-remember').hidden = true;
+      $('#field-code').hidden = true;
+      $('#auth-secondary').innerHTML = '<span>Already have an account?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
     } else {
-      h.textContent = 'Welcome back';
-      s.textContent = 'Your groceries, to-dos, and everyday plans. Right where you left them.';
-      btn.innerHTML = 'Log in ' + icon('arrow-right');
-      alt.innerHTML = 'Don\'t have an account? <a class="link-green" href="#" id="link-signup-2">Sign up for free</a>';
+      heading.textContent = 'Welcome back';
+      sub.textContent = 'Your groceries, to-dos, and everyday plans. Right where you left them.';
+      btn.querySelector('span').textContent = 'Sign in';
+      $('#field-password').hidden = false;
+      $('#row-remember').hidden = false;
+      $('#field-code').hidden = true;
+      $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Create one</a>';
     }
-    var su = $('#link-signup'), su2 = $('#link-signup-2'), si = $('#link-signin');
-    if (su) su.style.display = on ? 'none' : '';
-    if (su2) su2.style.display = on ? 'none' : '';
-    if (si) si.style.display = on ? '' : 'none';
+    clearAuthErrors();
+  }
+
+  function clearAuthErrors() {
+    ['err-email', 'err-pass', 'err-code'].forEach(function (id) {
+      var el = $('#' + id); if (el) el.classList.remove('show');
+    });
+    var note = $('#auth-note');
+    if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
+  }
+
+  function authError(field, message) {
+    var el = $('#' + field);
+    if (!el) return;
+    if (field === 'err-email') el.textContent = message || 'Enter a valid email address, e.g. you@example.com';
+    if (field === 'err-pass') el.textContent = message || 'Enter your password.';
+    if (field === 'err-code') el.textContent = message || 'That code is not right. Check your email and try again.';
+    el.classList.add('show');
+  }
+
+  function authNote(message, kind) {
+    var note = $('#auth-note');
+    if (!note) return;
+    note.textContent = message;
+    note.className = 'auth-note' + (kind ? ' is-' + kind : '');
+    note.hidden = false;
+  }
+
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  function validEmail(v) { return EMAIL_RE.test(String(v || '').trim()); }
+
+  function passwordProblems(pw) {
+    var out = [];
+    if (!pw) out.push('Enter your password.');
+    else {
+      if (pw.length < 8) out.push('Use at least 8 characters.');
+      if (!/[a-zA-Z]/.test(pw)) out.push('Include a letter.');
+      if (!/[0-9]/.test(pw)) out.push('Include a number.');
+    }
+    return out;
+  }
+
+  /* ---------------------------------------------------------- supabase ops */
+  function fingerprintPassword(pw) {
+    if (!S.client) return Promise.resolve(null);
+    return S.client.rpc('password_fingerprint', { p_password: pw })
+      .then(function (r) { return r && r.data ? r.data : null; })
+      .catch(function () { return null; });
+  }
+
+  function passwordAlreadyUsed(pw) {
+    if (!S.client) return Promise.resolve(false);
+    return S.client.rpc('password_is_taken', { p_password: pw })
+      .then(function (r) { return !!(r && r.data); })
+      .catch(function () { return false; });
+  }
+
+  function sendCode(email) {
+    auth.pendingEmail = email;
+    setAuthMode('code');
+    if (!S.client) {
+      authNote('Demo mode — no code was actually sent. Add your Supabase keys in assets/js/config.js to enable real sign-in.', 'info');
+      return;
+    }
+    S.client.auth.signInWithOtp({
+      email: email,
+      options: { shouldCreateUser: true, emailRedirectTo: window.location.origin + window.location.pathname }
+    }).then(function (r) {
+      if (r.error) {
+        authNote('We could not send the code: ' + r.error.message, 'error');
+      } else {
+        authNote('We sent a 6-digit code to ' + email + '. Check your inbox.', 'ok');
+      }
+    }).catch(function (e) {
+      authNote('We could not send the code: ' + e.message, 'error');
+    });
+  }
+
+  function verifyCode(email, token) {
+    if (!S.client) { signInDemo(); return; }
+    S.client.auth.verifyOtp({ email: email, token: token, type: 'email' })
+      .then(function (r) {
+        if (r.error) { authError('err-code', r.error.message); return; }
+        onSignedIn(r.data.user);
+      }).catch(function (e) { authError('err-code', e.message); });
+  }
+
+  function signInWithPassword(email, pw) {
+    if (!S.client) { signInDemo(); return; }
+    S.client.auth.signInWithPassword({ email: email, password: pw })
+      .then(function (r) {
+        if (r.error) {
+          if (/not confirmed/i.test(r.error.message)) {
+            authNote('Your email is not confirmed yet. Send yourself a code to finish setting up.', 'info');
+            sendCode(email);
+            return;
+          }
+          authError('err-pass', r.error.message);
+          return;
+        }
+        onSignedIn(r.data.user);
+      }).catch(function (e) { authError('err-pass', e.message); });
+  }
+
+  function signUpWithPassword(email, pw) {
+    if (!S.client) { signInDemo(); return; }
+    passwordAlreadyUsed(pw).then(function (taken) {
+      if (taken) {
+        authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+        return;
+      }
+      fingerprintPassword(pw).then(function (fp) {
+        var data = { full_name: email.split('@')[0] };
+        if (fp) data.password_fingerprint = fp;
+        S.client.auth.signUp({ email: email, password: pw, options: { data: data, emailRedirectTo: window.location.origin + window.location.pathname } })
+          .then(function (r) {
+            if (r.error) { authError('err-pass', r.error.message); return; }
+            if (r.data.session) { onSignedIn(r.data.user); return; }
+            /* email confirmation is on -> finish with the code */
+            auth.pendingEmail = email;
+            setAuthMode('code');
+            authNote('Account created. We sent a 6-digit code to ' + email + ' to confirm it.', 'ok');
+          }).catch(function (e) { authError('err-pass', e.message); });
+      });
+    });
+  }
+
+  function onSignedIn(user) {
+    auth.user = user || null;
+    state.signedIn = true;
+    save();
+    showApp();
+    toast('Welcome back, ' + (user && user.email ? user.email.split('@')[0] : 'Alex'));
+  }
+
+  /* demo mode: no backend, everything stays in the browser */
+  function signInDemo() {
+    state.signedIn = true;
+    save();
+    showApp();
+    toast('Signed in (demo mode)');
+  }
+
+  function submitAuth(e) {
+    e.preventDefault();
+    clearAuthErrors();
+
+    var email = ($('#f-email').value || '').trim();
+    var pw = $('#f-pass').value || '';
+    var code = ($('#f-code').value || '').trim();
+
+    if (!validEmail(email)) { authError('err-email'); $('#f-email').focus(); return; }
+
+    if (auth.mode === 'code') {
+      if (auth.pendingEmail && auth.pendingEmail !== email) auth.pendingEmail = email;
+      if (!code) { authError('err-code', 'Enter the code we sent you.'); $('#f-code').focus(); return; }
+      if (!S.client) { signInDemo(); return; }
+      verifyCode(auth.pendingEmail || email, code);
+      return;
+    }
+
+    var problems = passwordProblems(pw);
+    if (problems.length) { authError('err-pass', problems[0]); $('#f-pass').focus(); return; }
+
+    if (auth.mode === 'signup') signUpWithPassword(email, pw);
+    else signInWithPassword(email, pw);
+  }
+
+  function setSignupMode(on) {
+    setAuthMode(on ? 'signup' : 'signin');
   }
 
   /* =============================== EVENTS ================================= */
   function bind() {
-    /* ---- login ---- */
-    $('#btn-google').addEventListener('click', function () {
-      state.signedIn = true; save(); showApp();
-      toast('Signed in with Google');
-    });
+    /* ---- auth ---- */
+    $('#login-form').addEventListener('submit', submitAuth);
 
-    $('#login-form').addEventListener('submit', function (e) {
+    $('#auth-tabs').addEventListener('click', function (e) {
+      var tab = e.target.closest('[data-auth-tab]');
+      if (!tab) return;
       e.preventDefault();
-      var email = $('#f-email'), pass = $('#f-pass');
-      var okEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value.trim());
-      var okPass = pass.value.trim().length > 0;
-
-      $('#err-email').classList.toggle('show', !okEmail);
-      $('#err-pass').classList.toggle('show', !okPass);
-      email.classList.toggle('invalid', !okEmail);
-      pass.classList.toggle('invalid', !okPass);
-      if (!okEmail) { email.focus(); return; }
-      if (!okPass) { pass.focus(); return; }
-
-      state.signedIn = true;
-      save();
-      showApp();
-      toast('Welcome back, Alex');
+      setAuthMode(tab.dataset.authTab);
     });
 
     $('#toggle-pass').addEventListener('click', function () {
@@ -1690,12 +1876,17 @@
     });
 
     document.addEventListener('click', function (e) {
-      var t = e.target;
-      if (t.closest && (t.closest('#link-signup') || t.closest('#link-signup-2'))) {
-        e.preventDefault(); setSignupMode(true);
-      }
-      if (t.closest && t.closest('#link-signin')) {
-        e.preventDefault(); setSignupMode(false);
+      var su = e.target.closest('#link-signup');
+      if (su) { e.preventDefault(); setAuthMode('signup'); return; }
+      var si = e.target.closest('#link-signin');
+      if (si) { e.preventDefault(); setAuthMode('signin'); return; }
+      var fg = e.target.closest('#link-forgot');
+      if (fg) {
+        e.preventDefault();
+        var em = ($('#f-email').value || '').trim();
+        if (!validEmail(em)) { authError('err-email'); return; }
+        sendCode(em);
+        return;
       }
     });
 
@@ -2131,10 +2322,33 @@
   function init() {
     load();
     bind();
-    var h = (location.hash || '').replace('#/', '');
-    if (['dashboard', 'lists', 'spending'].indexOf(h) !== -1) state.route = h;
-    if (state.signedIn) showApp(); else showLogin();
-    window.__bililist = { state: state, reset: resetDemo, D: D };
+
+    /* restore an existing Supabase session, or fall back to the local one */
+    if (S.client) {
+      S.client.auth.getSession().then(function (r) {
+        if (r && r.data && r.data.session && r.data.user) {
+          auth.user = r.data.user;
+          state.signedIn = true;
+          var h = (location.hash || '').replace('#/', '');
+          if (['dashboard', 'lists', 'spending'].indexOf(h) !== -1) state.route = h;
+          showApp();
+        } else {
+          state.signedIn = false;
+          showLogin();
+        }
+      }).catch(function () { showLogin(); });
+    } else {
+      var hh = (location.hash || '').replace('#/', '');
+      if (['dashboard', 'lists', 'spending'].indexOf(hh) !== -1) state.route = hh;
+      if (state.signedIn) showApp(); else showLogin();
+    }
+
+    setAuthMode('signin');
+    if (!S.client) {
+      authNote('Demo mode — data is stored in this browser only. Add your Supabase URL and anon key in assets/js/config.js to turn on real accounts.', 'info');
+    }
+
+    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

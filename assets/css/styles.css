@@ -136,8 +136,40 @@ svg { display: block; }
   grid-template-columns: 1fr 1.08fr; gap: 56px; align-items: center;
 }
 
+/* --- auth tabs (sign in / create account / use a code) --- */
+.auth-tabs {
+  display: flex; gap: 4px; margin: 22px 0 18px; padding: 4px;
+  background: var(--cream-100); border-radius: var(--r-sm); border: 1px solid var(--line-2);
+}
+.auth-tab {
+  flex: 1; height: 36px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
+  color: var(--muted); transition: .15s; white-space: nowrap; padding: 0 6px;
+}
+.auth-tab:hover { color: var(--ink); }
+.auth-tab.is-active { background: var(--white); color: var(--green-700); box-shadow: var(--sh-1); }
+
+.auth-note {
+  display: flex; gap: 9px; align-items: flex-start; margin-bottom: 16px;
+  padding: 11px 13px; border-radius: var(--r-sm); font-size: 12.5px; line-height: 1.5;
+  border: 1px solid var(--line); background: var(--cream-100); color: var(--ink-soft);
+}
+.auth-note[hidden] { display: none; }
+.auth-note::before { content: "i"; flex: none; font-style: normal; font-weight: 700; }
+.auth-note.is-info  { background: var(--blue-100); border-color: #CFE1F2; color: #2F5F8C; }
+.auth-note.is-ok    { background: var(--green-50); border-color: var(--green-200); color: var(--green-700); }
+.auth-note.is-error { background: #FBECEA; border-color: #F3CFC9; color: var(--danger); }
+.auth-note.is-info::before  { content: "i"; }
+.auth-note.is-ok::before    { content: "\2713"; }
+.auth-note.is-error::before { content: "!"; }
+
+.field-hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.auth-secondary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 16px; font-size: 13px; color: var(--muted);
+}
+
 /* --- login form column --- */
-.login-form-col { max-width: 400px; width: 100%; justify-self: end; }
+.login-form-col { max-width: 420px; width: 100%; justify-self: end; }
 .login-form-col h1 { font-size: 34px; font-weight: 600; letter-spacing: -.02em; }
 .login-form-col .sub { color: var(--muted); font-size: 13.5px; margin-top: 6px; max-width: 330px; }
 .login-form-col .eyebrow { display: block; margin-bottom: 12px; }
