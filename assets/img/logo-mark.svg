@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="BiliLIST logo">
+  <title>BiliLIST</title>
+  <defs>
+    <radialGradient id="bl-bg" cx="50%" cy="38%" r="66%">
+      <stop offset="0%" stop-color="#FFF9E2"/>
+      <stop offset="60%" stop-color="#FCEFC6"/>
+      <stop offset="100%" stop-color="#F6E1A4"/>
+    </radialGradient>
+    <linearGradient id="bl-leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4CAF68"/>
+      <stop offset="100%" stop-color="#27764A"/>
+    </linearGradient>
+    <linearGradient id="bl-check" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#27764A"/>
+      <stop offset="55%" stop-color="#3E9C5C"/>
+      <stop offset="100%" stop-color="#5CBB77"/>
+    </linearGradient>
+    <linearGradient id="bl-bag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E2E0C4"/>
+      <stop offset="100%" stop-color="#B2B899"/>
+    </linearGradient>
+    <mask id="bl-ring-mask">
+      <rect width="200" height="200" fill="#fff"/>
+      <rect x="-12" y="88" width="224" height="10" fill="#000" transform="rotate(-30 100 100)"/>
+      <rect x="-12" y="88" width="224" height="10" fill="#000" transform="rotate(34 100 100)"/>
+    </mask>
+  </defs>
+
+  <!-- badge -->
+  <circle cx="100" cy="100" r="92" fill="url(#bl-bg)"/>
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#1B3A3D" stroke-width="7" mask="url(#bl-ring-mask)"/>
+
+  <!-- confetti -->
+  <g fill="#5E9BD1"><circle cx="40" cy="102" r="5"/><circle cx="172" cy="106" r="5"/></g>
+  <g fill="#D9A441"><circle cx="150" cy="44" r="5"/><circle cx="34" cy="140" r="4"/></g>
+  <g stroke="#D9A441" stroke-width="4.5" stroke-linecap="round"><path d="M56 38h14M63 31v14"/></g>
+  <g stroke="#5E9BD1" stroke-width="4.5" stroke-linecap="round"><path d="M166 150h14M173 143v14"/></g>
+
+  <!-- calendar (top-left) -->
+  <g transform="translate(32 46)">
+    <rect x="0" y="5" width="44" height="38" rx="5" fill="#FFF7D9" stroke="#1B3A3D" stroke-width="5.5"/>
+    <path d="M0 5h44v11H0z" fill="#27764A"/>
+    <g stroke="#1B3A3D" stroke-width="5" stroke-linecap="round"><path d="M12 0v9M32 0v9"/></g>
+    <g fill="#1B3A3D">
+      <rect x="9" y="24" width="6" height="6" rx="1.5"/>
+      <rect x="20" y="24" width="6" height="6" rx="1.5"/>
+      <rect x="31" y="24" width="6" height="6" rx="1.5"/>
+      <rect x="9" y="34" width="6" height="6" rx="1.5"/>
+      <rect x="20" y="34" width="6" height="6" rx="1.5"/>
+    </g>
+  </g>
+
+  <!-- people (top-right) -->
+  <g transform="translate(120 30)" stroke="#1B3A3D" stroke-width="4.5" fill="#FFF7D9">
+    <circle cx="30" cy="12" r="11"/>
+    <path d="M14 46c0-11 7-17 16-17s16 6 16 17" fill="none" stroke-linecap="round"/>
+    <circle cx="8" cy="22" r="9"/>
+    <path d="M-6 50c0-8 6-13 14-13" fill="none" stroke-linecap="round"/>
+    <circle cx="50" cy="24" r="8"/>
+    <path d="M63 50c0-8-5-11-12-12" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- leafy greens -->
+  <g transform="translate(60 52)">
+    <path d="M22 54C7 51-2 39 1 24 4 10 17 6 24 13 29 2 43 0 50 9 59 20 54 35 43 41c-6 4-14 7-21 13z" fill="url(#bl-leaf)" stroke="#1B3A3D" stroke-width="5.5" stroke-linejoin="round"/>
+    <g fill="none" stroke="#1B3A3D" stroke-width="4" stroke-linecap="round"><path d="M22 52V26"/><path d="M22 40L9 28M22 34l13-11"/></g>
+  </g>
+
+  <!-- grocery bag with orange -->
+  <g transform="translate(112 52)">
+    <path d="M2 6h36l5 52H-3z" fill="url(#bl-bag)" stroke="#1B3A3D" stroke-width="5.5" stroke-linejoin="round"/>
+    <path d="M12 6c0-10 4-15 8-15s8 5 8 15" fill="none" stroke="#1B3A3D" stroke-width="5.5" stroke-linecap="round"/>
+    <circle cx="20" cy="40" r="11" fill="#E9A33B" stroke="#1B3A3D" stroke-width="4"/>
+  </g>
+
+  <!-- cart -->
+  <g fill="none" stroke="#1B3A3D" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 58h16l11 48h70"/>
+    <path d="M57 106h84l-12 38H68z"/>
+    <path d="M76 106l-7 38M100 106l1 38M124 106l-5 30"/>
+    <circle cx="88" cy="162" r="9" fill="#1B3A3D"/>
+    <circle cx="128" cy="162" r="9" fill="#1B3A3D"/>
+  </g>
+
+  <!-- checkmark -->
+  <path d="M70 118l22 20 46-50" fill="none" stroke="url(#bl-check)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- spending chart (bottom-right) -->
+  <g transform="translate(122 132)">
+    <g fill="#27764A">
+      <rect x="2" y="22" width="10" height="18" rx="2.5"/>
+      <rect x="18" y="10" width="10" height="30" rx="2.5"/>
+      <rect x="34" y="0" width="10" height="40" rx="2.5"/>
+    </g>
+    <path d="M0 42h46" stroke="#1B3A3D" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

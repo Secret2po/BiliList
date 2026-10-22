@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development
+*.log
+*.local
+
+# Environment
+.env
+.env.local
+
+# Temporary
+*.tmp
+*.temp
+
+# Tool outputs
+tools/_download/
+tools/*.pyc
+
+# OS generated
+ehthumbs.db
+Desktop.ini

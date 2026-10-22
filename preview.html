@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>BiliLIST preview harness</title>
+<style>
+  html,body{margin:0;background:#333;font:12px system-ui}
+  iframe{border:0;display:block;background:#fff}
+  .bar{position:sticky;top:0;background:#111;color:#eee;padding:6px 10px;z-index:9;display:flex;gap:8px;align-items:center}
+  button{background:#2c7749;color:#fff;border:0;border-radius:4px;padding:4px 10px;cursor:pointer;font:inherit}
+</style></head>
+<body>
+<div class="bar">
+  <button onclick="go('login')">Login</button>
+  <button onclick="go('dashboard')">Dashboard</button>
+  <button onclick="go('lists')">My lists</button>
+  <button onclick="go('spending')">Spending</button>
+  <button onclick="go('profile')">Profile drawer</button>
+  <span id="label"></span>
+</div>
+<iframe id="f" src="index.html" width="1440" height="1180"></iframe>
+<script>
+  var KEY = 'bililist.prototype.v1';
+  function go(view){
+    var f = document.getElementById('f');
+    document.getElementById('label').textContent = '-> ' + view;
+    if(view === 'login'){
+      f.contentWindow.localStorage.removeItem(KEY);
+      f.contentWindow.location.hash = '';
+      f.contentWindow.location.reload();
+      return;
+    }
+    var s = JSON.parse(f.contentWindow.localStorage.getItem(KEY) || '{}');
+    s.signedIn = true;
+    f.contentWindow.localStorage.setItem(KEY, JSON.stringify(s));
+    f.contentWindow.location.hash = '#/' + (view === 'profile' ? 'dashboard' : view);
+    f.contentWindow.location.reload();
+    if(view === 'profile'){
+      setTimeout(function(){ f.contentWindow.location.hash = '#/profile'; }, 500);
+    }
+  }
+</script>
+</body></html>
