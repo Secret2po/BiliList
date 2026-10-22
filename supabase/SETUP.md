@@ -37,21 +37,31 @@ policies** that enforce the Owner / Editor / Viewer rules.
 
 ## 3. Add your keys (1 min)
 
-1. Dashboard → **Project Settings** (gear icon, bottom left) → **API**.
-2. Copy the **Project URL** and the **anon / publishable** key.
-3. Open `assets/js/config.js` and paste them in:
+The project URL is already filled in. You only need the public key, and there
+are two ways to give it to the app.
+
+**Fastest — from the login screen.** The "Demo mode" box on the sign-in page
+links straight to your project's API keys. Copy the **Publishable key** (or the
+legacy **anon** key), paste it into the box and press **Connect**. The app
+checks it against Supabase before accepting it and reloads into live mode.
+That key is stored in `localStorage` for that browser only.
+
+**Permanent — in the repo.** Open `assets/js/config.js` and paste it there, so
+every browser and every teammate gets it:
 
 ```js
 window.BILILIST_CONFIG = {
-  supabaseUrl: 'https://xxxxxxxx.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOi...'
+  supabaseUrl: 'https://xsjwhwrnseevlntxwjeg.supabase.co',
+  supabaseAnonKey: 'sb_publishable_...'
 };
 ```
 
-4. Refresh the page — the blue "Demo mode" banner disappears.
+A key saved from the login screen overrides `config.js` for that browser. To
+clear it, run `localStorage.removeItem('bililist.supabase')` in the console.
 
 > The anon key is **meant** to be public. It only exposes rows that the RLS
-> policies allow. Never put the `service_role` key in the frontend.
+> policies allow. Never put the `service_role` / secret key in the frontend —
+> the Connect box refuses `sb_secret_…` keys.
 
 ## 4. Turn on the email code
 

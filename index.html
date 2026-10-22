@@ -94,6 +94,23 @@
 
         <div class="auth-note" id="auth-note" hidden></div>
 
+        <div class="connect-box" id="connect-box" hidden>
+          <div class="connect-head">
+            <span class="connect-badge">Demo mode</span>
+            <span>Your Supabase project is set up — it just needs its public API key.</span>
+          </div>
+          <ol class="connect-steps">
+            <li>Open <a href="https://supabase.com/dashboard/project/xsjwhwrnseevlntxwjeg/settings/api-keys" target="_blank" rel="noopener">Project Settings &rarr; API Keys</a></li>
+            <li>Copy the <b>Publishable key</b> (or the legacy <b>anon</b> key)</li>
+            <li>Paste it below and press Connect</li>
+          </ol>
+          <div class="connect-row">
+            <input class="input" id="connect-key" type="text" placeholder="sb_publishable_… or eyJhbGciOi…" autocomplete="off" spellcheck="false">
+            <button class="btn-primary btn-connect" type="button" id="connect-save">Connect</button>
+          </div>
+          <p class="connect-hint" id="connect-hint">This key is public by design. Never paste the <b>secret</b> / <code>service_role</code> key.</p>
+        </div>
+
         <form id="login-form" novalidate>
           <div class="field" id="field-username" hidden>
             <label for="f-username">Username</label>

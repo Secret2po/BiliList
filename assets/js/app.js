@@ -1746,6 +1746,13 @@
     note.hidden = false;
   }
 
+  /* shown when the project URL is known but the public key is not */
+  function showConnectBox() {
+    var box = $('#connect-box');
+    if (!box) return;
+    box.hidden = false;
+  }
+
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
   function validEmail(v) { return EMAIL_RE.test(String(v || '').trim()); }
@@ -2026,6 +2033,53 @@
     }
     bindReveal('toggle-pass', 'f-pass');
     bindReveal('toggle-pass2', 'f-pass2');
+
+    /* ---- connect box: paste the Supabase public key ---- */
+    var connectBtn = $('#connect-save');
+    if (connectBtn) {
+      var finishConnect = function () { window.location.reload(); };
+
+      connectBtn.addEventListener('click', function () {
+        var hint = $('#connect-hint');
+        var projectUrl = S.url || 'https://xsjwhwrnseevlntxwjeg.supabase.co';
+        var k = ($('#connect-key').value || '').trim();
+
+        hint.className = 'connect-hint';
+
+        if (k.length < 20) {
+          hint.textContent = 'That does not look like a key — copy the whole value from the dashboard.';
+          hint.className = 'connect-hint is-error';
+          return;
+        }
+        if (/^sb_secret_/.test(k)) {
+          hint.textContent = 'That is the secret key. Use the publishable (or anon) key instead.';
+          hint.className = 'connect-hint is-error';
+          return;
+        }
+
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting…';
+        hint.textContent = 'Checking the key with Supabase…';
+
+        S.testConnection(projectUrl, k).then(function (ok) {
+          if (!ok) {
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect';
+            hint.textContent = 'Supabase rejected that key. Make sure it belongs to project xsjwhwrnseevlntxwjeg and is the publishable / anon key.';
+            hint.className = 'connect-hint is-error';
+            return;
+          }
+          S.saveConfig(projectUrl, k);
+          hint.textContent = 'Key accepted. Reloading…';
+          hint.className = 'connect-hint is-ok';
+          finishConnect();
+        });
+      });
+
+      $('#connect-key').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); connectBtn.click(); }
+      });
+    }
 
     document.addEventListener('click', function (e) {
       var su = e.target.closest('#link-signup') || e.target.closest('#link-signup-top');
@@ -2525,10 +2579,10 @@
 
     setAuthStep('signin');
     if (!S.client) {
-      if (S.initError) {
+      if (S.hasUrl && !S.hasKey) {
+        showConnectBox();
+      } else if (S.initError) {
         authNote(S.initError, 'error');
-      } else if (S.hasUrl && !S.hasKey) {
-        authNote('Supabase project found, but the anon key is still missing. Paste it into assets/js/config.js to switch off demo mode and start sending real emails.', 'info');
       } else if (S.hasUrl && S.hasKey) {
         authNote('The Supabase SDK did not load. Check your internet connection, then refresh the page.', 'error');
       } else {

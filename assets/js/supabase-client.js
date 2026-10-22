@@ -1,20 +1,49 @@
 /* ==========================================================================
    BiliLIST — Supabase client
    --------------------------------------------------------------------------
-   Loads the Supabase JS SDK and exposes a single client. If no keys are set
-   in assets/js/config.js the app falls back to "demo mode": everything runs
-   in the browser exactly as before, so the prototype can still be shown
-   without a backend.
+   Loads the Supabase JS SDK and exposes a single client.
+
+   The connection can come from two places, in this order of precedence:
+     1. localStorage  "bililist.supabase"  (set from the login screen's
+        Connect box — handy for demos, and it keeps the key out of the repo)
+     2. assets/js/config.js                (the value that ships with the site)
+
+   If neither is present the app falls back to "demo mode": everything runs in
+   the browser, so the prototype can still be shown without a backend.
    ========================================================================== */
 (function (global) {
   'use strict';
+
+  var STORE_KEY = 'bililist.supabase';
+
+  function readOverride() {
+    try {
+      var raw = global.localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      var v = JSON.parse(raw);
+      if (v && typeof v.url === 'string' && typeof v.key === 'string') return v;
+    } catch (e) { /* ignore a corrupted entry */ }
+    return null;
+  }
 
   var CONFIG = global.BILILIST_CONFIG || {};
   var url = (CONFIG.supabaseUrl || '').trim();
   var key = (CONFIG.supabaseAnonKey || '').trim();
 
-  var hasUrl = !!url && url.indexOf('YOUR-PROJECT') === -1;
-  var hasKey = !!key && key.indexOf('PASTE-') === -1 && key.indexOf('YOUR-ANON') === -1;
+  var override = readOverride();
+  var source = 'config';
+  if (override) {
+    url = override.url.trim();
+    key = override.key.trim();
+    source = 'browser';
+  }
+
+  function looksReal(v, placeholder) {
+    return !!v && v.indexOf(placeholder) === -1;
+  }
+
+  var hasUrl = looksReal(url, 'YOUR-PROJECT');
+  var hasKey = looksReal(key, 'PASTE-') && looksReal(key, 'YOUR-ANON');
 
   var configured = hasUrl && hasKey && !!global.supabase && !!global.supabase.createClient;
   var client = null;
@@ -37,6 +66,31 @@
     initError = 'The Supabase SDK did not load. Check your internet connection and refresh.';
   }
 
+  /* used by the Connect box on the login screen */
+  function saveConfig(nextUrl, nextKey) {
+    global.localStorage.setItem(STORE_KEY, JSON.stringify({
+      url: String(nextUrl).trim(),
+      key: String(nextKey).trim()
+    }));
+  }
+
+  function clearConfig() {
+    global.localStorage.removeItem(STORE_KEY);
+  }
+
+  /* a real round trip, so we know the key is accepted before reloading */
+  function testConnection(testUrl, testKey) {
+    if (!global.fetch) return Promise.resolve(true);
+    var base = String(testUrl).replace(/\/+$/, '');
+    return global.fetch(base + '/auth/v1/settings', {
+      headers: { apikey: testKey, Authorization: 'Bearer ' + testKey }
+    }).then(function (r) {
+      return r.ok;
+    }).catch(function () {
+      return false;
+    });
+  }
+
   global.BiliSupabase = {
     client: client,
     isConfigured: !!client,
@@ -44,6 +98,10 @@
     url: url,
     hasUrl: hasUrl,
     hasKey: hasKey,
-    initError: initError
+    source: source,
+    initError: initError,
+    saveConfig: saveConfig,
+    clearConfig: clearConfig,
+    testConnection: testConnection
   };
 })(window);
