@@ -64,6 +64,19 @@ For the 6-digit code to arrive you need an email provider:
 3. Under **Authentication → URL Configuration**, set **Site URL** to
    `http://127.0.0.1:8123` and add `http://localhost:8123` to the redirect
    allow list. Add your real domain when you deploy.
+4. **Add the code to the email template.** Supabase's stock "Magic Link"
+   template only contains a link, so the 6-digit code never appears. Go to
+   **Authentication → Emails → Magic Link** and put `{{ .Token }}` in the body,
+   for example:
+
+   ```html
+   <h2>Your BiliLIST code</h2>
+   <p>Enter this code to finish signing in:</p>
+   <p style="font-size:28px;letter-spacing:6px"><b>{{ .Token }}</b></p>
+   ```
+
+   Do the same for **Confirm signup** if you want the confirmation email to
+   show a code as well.
 
 ---
 
