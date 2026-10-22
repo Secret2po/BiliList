@@ -26,31 +26,33 @@
   }
 
   /* ====================================================== UNITS ========== */
-  /* Retail units a Philippine household actually shops in. Grouped so the
-     picker reads like a market stall sign, not a spreadsheet. */
+  /* Retail units a Philippine household actually shops in, with the sensible
+     range for each. `min`/`max`/`step` drive the amount field: you cannot
+     buy 400 pcs of eggs, but you can buy 1.5 kg of rice.
+       max = the largest sensible amount in one shopping trip for that unit. */
   var UNITS = [
     { group: 'Count', units: [
-      { k: 'pcs', l: 'pcs' },
-      { k: 'dozen', l: 'dozen' },
-      { k: 'bunch', l: 'bunch' }
+      { k: 'pcs',   l: 'pcs',   min: 1,   max: 99,   step: 1   },
+      { k: 'dozen', l: 'dozen', min: 1,   max: 12,   step: 1   },
+      { k: 'bunch', l: 'bunch', min: 1,   max: 20,   step: 1   }
     ] },
     { group: 'Weight', units: [
-      { k: 'kg', l: 'kg' },
-      { k: 'g', l: 'g' }
+      { k: 'kg', l: 'kg', min: 0.1, max: 50,  step: 0.1 },
+      { k: 'g',  l: 'g',  min: 1,   max: 5000, step: 1   }
     ] },
     { group: 'Volume', units: [
-      { k: 'L', l: 'L' },
-      { k: 'ml', l: 'ml' }
+      { k: 'L',  l: 'L',  min: 0.1, max: 20,  step: 0.1 },
+      { k: 'ml', l: 'ml', min: 10,  max: 5000, step: 10  }
     ] },
     { group: 'Pack', units: [
-      { k: 'pack', l: 'pack' },
-      { k: 'can', l: 'can' },
-      { k: 'bottle', l: 'bottle' },
-      { k: 'box', l: 'box' },
-      { k: 'bag', l: 'bag' },
-      { k: 'pouch', l: 'pouch' },
-      { k: 'loaf', l: 'loaf' },
-      { k: 'carton', l: 'carton' }
+      { k: 'pack',   l: 'pack',   min: 1, max: 60,  step: 1 },
+      { k: 'can',    l: 'can',    min: 1, max: 60,  step: 1 },
+      { k: 'bottle', l: 'bottle', min: 1, max: 24,  step: 1 },
+      { k: 'box',    l: 'box',    min: 1, max: 30,  step: 1 },
+      { k: 'bag',    l: 'bag',    min: 1, max: 30,  step: 1 },
+      { k: 'pouch',  l: 'pouch',  min: 1, max: 24,  step: 1 },
+      { k: 'loaf',   l: 'loaf',   min: 1, max: 12,  step: 1 },
+      { k: 'carton', l: 'carton', min: 1, max: 20,  step: 1 }
     ] }
   ];
 

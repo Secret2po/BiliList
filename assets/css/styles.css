@@ -551,37 +551,44 @@ svg { display: block; }
 .ls-pill .pill-count { font-size: 11.5px; background: rgba(31,84,52,.12); border-radius: var(--r-pill); padding: 1px 8px; color: var(--green-700); }
 .ls-pill.is-active .pill-count { background: var(--green-100); color: var(--green-700); }
 
-/* --- prominent quick-add bar --- */
-.add-row {
-  display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid rgba(31,84,52,.14);
-  background: var(--green-soft-dp);
+/* --- toolbar: find-in-list search + add button --- */
+.list-toolbar {
+  display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+  border-bottom: 1px solid rgba(31,84,52,.14); background: var(--green-soft-dp);
 }
 .add-input { position: relative; display: flex; align-items: center; }
 .add-input > svg {
   position: absolute; left: 15px; width: 19px; height: 19px; color: var(--green-600);
   pointer-events: none; z-index: 1;
 }
-.add-input .input {
-  height: 52px; padding-left: 44px; font-size: 16px; border-radius: var(--r-sm);
-  border: 1.5px solid rgba(31,84,52,.2); background: var(--white);
+.find-input { position: relative; display: flex; align-items: center; flex: 1; min-width: 0; }
+.find-input > svg {
+  position: absolute; left: 14px; width: 18px; height: 18px; color: var(--green-600);
+  pointer-events: none; z-index: 1;
 }
-.add-input .input:focus { border-color: var(--green-600); box-shadow: 0 0 0 3px rgba(60,148,89,.2); }
-.add-row .btn-add {
-  height: 52px; padding: 0 20px; border-radius: var(--r-sm); background: var(--green-600);
-  color: var(--white); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center;
-  gap: 8px; flex: none; transition: .15s; box-shadow: 0 2px 6px rgba(31,84,52,.22);
+.find-input .input { height: 44px; padding-left: 40px; padding-right: 38px; font-size: 15px; }
+.find-clear {
+  position: absolute; right: 6px; width: 28px; height: 28px; border-radius: 7px;
+  display: grid; place-items: center; color: var(--muted);
 }
-.add-row .btn-add:hover { background: var(--green-700); }
-.add-row .btn-add svg { width: 17px; height: 17px; }
-.add-hint {
-  grid-column: 1 / -1; font-size: 12.5px; color: #3C5F4A; opacity: .9;
-  display: inline-flex; align-items: center; gap: 7px;
+.find-clear:hover { background: var(--cream-200); color: var(--ink); }
+.find-clear svg { width: 14px; height: 14px; }
+.find-count { font-size: 12.5px; color: #3C5F4A; font-weight: 600; white-space: nowrap; }
+.list-toolbar .btn-add {
+  height: 44px; padding: 0 18px; border-radius: var(--r-sm); background: var(--green-600);
+  color: var(--white); font-size: 14.5px; font-weight: 600; display: inline-flex; align-items: center;
+  gap: 7px; flex: none; transition: .15s; box-shadow: 0 2px 6px rgba(31,84,52,.22); white-space: nowrap;
 }
-.add-hint::before {
-  content: ""; width: 13px; height: 13px; border-radius: 3px; background: var(--green-500);
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,.85); flex: none;
+.list-toolbar .btn-add:hover { background: var(--green-700); }
+.list-toolbar .btn-add svg { width: 16px; height: 16px; }
+
+.empty-cta {
+  margin-top: 10px; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13.5px; font-weight: 600; color: var(--green-700);
+  padding: 8px 14px; border-radius: var(--r-sm); background: rgba(255,255,255,.7);
+  border: 1px solid rgba(31,84,52,.2);
 }
+.empty-cta:hover { background: var(--white); }
 
 .aisle-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -982,12 +989,6 @@ svg { display: block; }
 /* ==========================================================================
    ADD-ITEM SEARCH & RECOMMENDATIONS
    ========================================================================== */
-.add-input-wrap { position: relative; min-width: 0; }
-.sug-panel {
-  position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 30;
-  background: var(--white); border: 1px solid var(--line-2); border-radius: var(--r-md);
-  box-shadow: var(--sh-3); overflow: hidden;
-}
 .sug-cats {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 10px;
   background: var(--cream-100); border-bottom: 1px solid var(--line-2);
@@ -1132,6 +1133,33 @@ svg { display: block; }
 .cat-new .btn-invite { grid-column: 1 / -1; justify-self: start; }
 
 /* ==========================================================================
+   ADD ITEM MODAL + VALIDATION
+   ========================================================================== */
+.modal-box--add { max-width: 720px; }
+.modal-body--add { padding: 0; }
+.add-search { padding: 16px 20px 12px; }
+.add-search .input { height: 50px; font-size: 16px; padding-left: 44px; }
+.modal-body--add .sug-cats { border-top: 1px solid var(--line-2); }
+.modal-body--add .sug-qty { border-bottom: 1px solid var(--line-2); }
+.modal-body--add .sug-list { max-height: 300px; }
+.sug-qty-hint { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+
+.review { padding: 2px 2px 0; }
+.review-head {
+  display: flex; align-items: center; gap: 8px; font-family: var(--font-head);
+  font-weight: 600; font-size: 14px; color: var(--green-700); margin-bottom: 2px;
+}
+.review-head svg { width: 16px; height: 16px; }
+.qty-hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+.qty-error {
+  font-size: 12.5px; color: var(--danger); font-weight: 600; margin-top: 8px;
+  background: #FBECEA; border: 1px solid #F3CFC9; border-radius: var(--r-sm);
+  padding: 8px 11px; display: flex; align-items: center; gap: 7px;
+}
+.qty-error[hidden] { display: none; }
+.input.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(192,69,59,.12); }
+
+/* ==========================================================================
    ITEM POPOVER (pencil) + UNIT PICKER
    ========================================================================== */
 /* unit chips: a flat picker, so no native dropdown can overflow the card */
@@ -1257,9 +1285,9 @@ svg { display: block; }
   .aisle-head { padding: 10px 14px; }
   .item-qty { font-size: 12.5px; }
   .aisle-name { font-size: 12.5px; }
-  .add-row { padding: 12px; gap: 9px; }
-  .add-row .btn-add { padding: 0 14px; font-size: 13.5px; }
-  .add-input .input { font-size: 15px; }
+  .list-toolbar { padding: 11px 14px; gap: 9px; }
+  .list-toolbar .btn-add { padding: 0 13px; font-size: 13.5px; height: 42px; }
+  .find-input .input { height: 42px; font-size: 14.5px; padding-left: 36px; }
   .inv-head, .inv-row { grid-template-columns: 30px minmax(0,1fr) 96px 100px; gap: 9px; }
   .inv-head span:nth-child(3), .inv-row .inv-exp { display: none; }
   .inv-head span:last-child, .inv-row .inv-add { grid-column: 4; }

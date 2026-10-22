@@ -60,6 +60,8 @@
     addQty: { n: 1, u: 'pcs' },
     addQtyTouched: false,
     editUnit: 'pcs',
+    listQuery: '',
+    addModal: { open: false, step: 'search', query: '', draft: null },
     editingId: null,
     catPanelOpen: false,
     expandedCats: {}
@@ -127,6 +129,47 @@
       }
     }
     return k || '';
+  }
+  /* the full definition (limits + step) for a unit */
+  function unitDef(k) {
+    var key = unitIndex()[String(k || '').toLowerCase()] || k;
+    for (var i = 0; i < D.units.length; i++) {
+      for (var j = 0; j < D.units[i].units.length; j++) {
+        if (D.units[i].units[j].k === key) return D.units[i].units[j];
+      }
+    }
+    return { k: key, l: key, min: 1, max: 99, step: 1 };
+  }
+  /* validate an amount against its unit. No letters, no nonsense ranges. */
+  function validateQty(raw, unitKey) {
+    var u = unitDef(unitKey);
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return { ok: false, msg: 'Enter how many you need.' };
+    if (/[a-z]/i.test(s)) return { ok: false, msg: 'Numbers only — no letters.' };
+    if (!/^\d*\.?\d+$/.test(s)) return { ok: false, msg: 'Enter a number, e.g. 2 or 1.5.' };
+    var n = parseFloat(s);
+    if (isNaN(n)) return { ok: false, msg: 'Enter a number, e.g. 2 or 1.5.' };
+    if (n <= 0) return { ok: false, msg: 'Must be more than 0.' };
+    if (n < u.min) return { ok: false, msg: 'Minimum is ' + unitQty(u, u.min) + '.' };
+    if (n > u.max) return { ok: false, msg: 'Maximum is ' + unitQty(u, u.max) + ' in one trip.' };
+    return { ok: true, n: n, msg: '' };
+  }
+  /* a sensible example amount for this unit */
+  function unitExample(u) {
+    if (u.k === 'kg') return '1.5 kg';
+    if (u.k === 'g') return '250 g';
+    if (u.k === 'L') return '1.5 L';
+    if (u.k === 'ml') return '500 ml';
+    return '2 ' + u.l;
+  }
+  /* "1 bottle" / "24 bottles" */
+  function unitQty(u, n) {
+    var l = u.l;
+    if (n === 1) return '1 ' + l;
+    if (/^(kg|g|L|ml|pcs)$/.test(l)) return n + ' ' + l;
+    if (/(s|x|ch|sh)$/.test(l)) return n + ' ' + l + 'es';
+    if (/[^s]$/.test(l)) return n + ' ' + l + 's';
+    return n + ' ' + l;
   }
   /* a flat row of unit chips — no native dropdown, so nothing can overflow */
   function unitPicker(selected, id) {
@@ -488,6 +531,7 @@
     var catOptions = state.categories.map(function (c) {
       return '<option value="' + c.id + '"' + (c.id === it.cat ? ' selected' : '') + '>' + esc(c.name) + '</option>';
     }).join('');
+    var ud = unitDef(it.qty.u);
     return '<div class="item-pop" data-pop="' + it.id + '">' +
       '<div class="pop-head">' +
         '<span>Edit item</span>' +
@@ -497,9 +541,11 @@
       '<input class="input" id="edit-name" value="' + esc(it.name) + '" aria-label="Item name">' +
       '<label class="pop-label">Quantity</label>' +
       '<div class="pop-qty">' +
-        '<input class="input pop-n" id="edit-qty-n" type="number" min="0" step="1" value="' + it.qty.n + '" aria-label="Amount">' +
+        '<input class="input pop-n" id="edit-qty-n" type="text" inputmode="decimal" value="' + it.qty.n + '" aria-label="Amount">' +
         unitPicker(state.editUnit || it.qty.u, 'edit-unit-picker') +
       '</div>' +
+      '<p class="qty-hint">Up to ' + unitQty(ud, ud.max) + ' in one trip. Decimals are fine — ' + unitExample(ud) + ' works.</p>' +
+      '<p class="qty-error" id="edit-error" hidden></p>' +
       '<label class="pop-label">Category</label>' +
       '<select class="role-select pop-cat" id="edit-cat" aria-label="Category">' + catOptions + '</select>' +
       '<div class="pop-foot">' +
@@ -509,6 +555,17 @@
         '<button class="pop-save" data-act="save-item">Save</button>' +
       '</div>' +
     '</div>';
+  }
+
+  function showEditError(msg) {
+    var el = $('#edit-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+  }
+  function clearEditError() {
+    var el = $('#edit-error');
+    if (el) { el.hidden = true; el.textContent = ''; }
   }
 
   /* ------------------------------------------------------ suggestion panel */
@@ -545,10 +602,12 @@
         '</button>'
       : '';
 
+    var ud = unitDef(state.addQty.u);
     var qtyRow = '<div class="sug-qty">' +
       '<div class="sug-qty-top">' +
         '<span class="sug-qty-label">Add as</span>' +
-        '<input class="input sug-qty-n" id="sug-qty-n" type="number" min="0" step="1" value="' + state.addQty.n + '" aria-label="Amount">' +
+        '<input class="input sug-qty-n" id="sug-qty-n" type="text" inputmode="decimal" value="' + state.addQty.n + '" aria-label="Amount">' +
+        '<span class="sug-qty-hint">max ' + unitQty(ud, ud.max) + '</span>' +
       '</div>' +
       unitPicker(state.addQty.u, 'sug-qty-u') +
     '</div>';
@@ -558,6 +617,91 @@
       '<div class="sug-list">' +
         (res.all.length ? '<div class="sug-group-title">' + (q ? 'Suggestions' : 'Frequent in your household') + '</div>' : '') +
         rows + empty + addRow +
+      '</div>';
+  }
+
+  /* ============================ ADD ITEM MODAL =========================== */
+  function openAddModal(seed) {
+    state.addModal = {
+      open: true,
+      step: 'search',
+      query: seed || '',
+      draft: null
+    };
+    state.addCategory = 'auto';
+    state.addQtyTouched = false;
+    state.addQty = defaultQtyFor(seed || '');
+    renderAddModal();
+    $('#add-modal').classList.add('show');
+    document.body.style.overflow = 'hidden';
+    setTimeout(function () {
+      var el = $('#add-search');
+      if (el) { el.focus(); el.select(); }
+    }, 60);
+  }
+
+  function closeAddModal() {
+    state.addModal = { open: false, step: 'search', query: '', draft: null };
+    $('#add-modal').classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  /* the second step: review the product before it goes on the list */
+  function reviewStep(draft) {
+    var catOptions = state.categories.map(function (c) {
+      return '<option value="' + c.id + '"' + (c.id === draft.cat ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    var ud = unitDef(draft.u);
+    return '<div class="review">' +
+      '<div class="review-head">' + icon('pencil') + '<span>Review before adding</span></div>' +
+      '<label class="pop-label">Product name</label>' +
+      '<input class="input" id="rv-name" value="' + esc(draft.name) + '" aria-label="Product name">' +
+      '<label class="pop-label">How much</label>' +
+      '<div class="pop-qty">' +
+        '<input class="input pop-n" id="rv-n" type="text" inputmode="decimal" value="' + draft.n + '" aria-label="Amount">' +
+        unitPicker(draft.u, 'rv-unit-picker') +
+      '</div>' +
+      '<p class="qty-hint">Up to ' + unitQty(ud, ud.max) + ' in one trip. Decimals are fine — ' + unitExample(ud) + ' works.</p>' +
+      '<p class="qty-error" id="rv-error" hidden></p>' +
+      '<label class="pop-label">Category</label>' +
+      '<select class="role-select pop-cat" id="rv-cat" aria-label="Category">' + catOptions + '</select>' +
+      '<div class="pop-foot">' +
+        '<button class="pop-cancel" data-act="add-back">Back to search</button>' +
+        '<span class="grow"></span>' +
+        '<button class="pop-cancel" data-act="close-add">Cancel</button>' +
+        '<button class="pop-save" data-act="confirm-add">Add to list</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderAddModal() {
+    var m = state.addModal;
+    if (!m || !m.open) return;
+    var box = $('#add-modal-body');
+    if (!box) return;
+
+    var head = '<div class="modal-head">' +
+      '<div>' +
+        '<span class="eyebrow">' + (m.step === 'review' ? 'Step 2 of 2' : 'Step 1 of 2') + ' · ' + esc(activeList().name) + '</span>' +
+        '<h2>' + (m.step === 'review' ? 'Check the details' : 'Add an item') + '</h2>' +
+      '</div>' +
+      '<button class="drawer-close" data-act="close-add" aria-label="Close">' + icon('x') + '</button>' +
+    '</div>';
+
+    if (m.step === 'review') {
+      box.innerHTML = head + '<div class="modal-body">' + reviewStep(m.draft) + '</div>';
+      return;
+    }
+
+    var searchBox = '<div class="add-input add-search">' +
+      '<svg class="ic"><use href="#i-search"/></svg>' +
+      '<input class="input" id="add-search" placeholder="Search ' + D.catalogue.length + '+ Filipino products — e.g. dishwashing liquid" value="' + esc(m.query) + '" autocomplete="off">' +
+    '</div>';
+
+    box.innerHTML = head +
+      '<div class="modal-body modal-body--add">' +
+        searchBox +
+        suggestPanelHtml(m.query) +
       '</div>';
   }
 
@@ -585,12 +729,23 @@
     var total = all.length;
     var pct = total ? Math.round((done / total) * 100) : 0;
 
+    /* the find-in-list search only filters what is already on the list */
+    var q = state.listQuery.trim().toLowerCase();
+    var matches = function (it) {
+      if (!q) return true;
+      return it.name.toLowerCase().indexOf(q) !== -1 ||
+             qtyText(it.qty).toLowerCase().indexOf(q) !== -1 ||
+             catName(it.cat).toLowerCase().indexOf(q) !== -1;
+    };
+
     var body = '';
+    var shown = 0;
     if (tab === 'inventory') {
       body = '<div class="inv-head"><span>Item</span><span>On hand</span><span>Shelf life</span><span></span></div>' +
         '<div class="inv-body">' + inventoryRows() + '</div>';
     } else {
-      var items = tab === 'pantry' ? bought : toBuy;
+      var items = (tab === 'pantry' ? bought : toBuy).filter(matches);
+      shown = items.length;
       var groups = aisleGroups(items).map(function (g) {
         return '<div class="aisle-group">' +
           '<div class="aisle-head">' +
@@ -601,11 +756,18 @@
         '</div>';
       }).join('');
 
-      body = groups || '<div class="empty-state">' +
-        (tab === 'pantry'
-          ? 'Nothing in the pantry yet. Items you check off land here automatically.'
-          : 'Everything is bought. Nice work — nothing left to pick up.') +
-      '</div>';
+      if (!groups) {
+        body = '<div class="empty-state">' +
+          (q
+            ? 'Nothing on this list matches “' + esc(state.listQuery.trim()) + '”.<br>' +
+              '<button class="empty-cta" data-act="add-named" data-name="' + esc(state.listQuery.trim()) + '">+ Add it to the list</button>'
+            : (tab === 'pantry'
+              ? 'Nothing in the pantry yet. Items you check off land here automatically.'
+              : 'Everything is bought. Nice work — nothing left to pick up.')) +
+        '</div>';
+      } else {
+        body = groups;
+      }
     }
 
     var nextRun = state.events.filter(function (e) { return e.kind === 'list'; })[0];
@@ -642,18 +804,16 @@
         '<div class="list-switch" role="tablist">' + tabs + '</div>' +
       '</div>' +
 
-      '<div class="add-row">' +
-        '<div class="add-input-wrap">' +
-          '<div class="add-input">' +
-            '<svg class="ic"><use href="#i-search"/></svg>' +
-            '<input class="input" id="new-item" placeholder="Search or add an item — e.g. dishwashing liquid" autocomplete="off">' +
-          '</div>' +
-          '<div class="sug-panel" id="sug-panel" hidden>' + suggestPanelHtml('') + '</div>' +
+      '<div class="list-toolbar">' +
+        '<div class="find-input">' +
+          '<svg class="ic"><use href="#i-search"/></svg>' +
+          '<input class="input" id="list-search" placeholder="Find in this list…" value="' + esc(state.listQuery) + '" autocomplete="off" aria-label="Find items in this list">' +
+          (state.listQuery
+            ? '<button class="find-clear" data-act="clear-search" aria-label="Clear search">' + icon('x') + '</button>'
+            : '') +
         '</div>' +
-        '<button class="btn-add" data-act="add-item" id="btn-add-item">' + icon('plus') +
-          '<span>' + (state.addCategory === 'auto' ? 'Add item' : 'Add to ' + esc(catName(state.addCategory))) + '</span>' +
-        '</button>' +
-        '<span class="add-hint">Type to search — we suggest items and detect the category for you</span>' +
+        (q ? '<span class="find-count">' + shown + ' of ' + total + '</span>' : '') +
+        '<button class="btn-add" data-act="open-add">' + icon('plus') + '<span>Add item</span></button>' +
       '</div>' +
 
       body +
@@ -1233,25 +1393,12 @@
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
-  function addItem(rawText) {
-    var input = $('#new-item');
-    var raw = (rawText !== undefined ? rawText : (input ? input.value : '')).trim();
-    if (!raw) { if (input) input.focus(); return; }
-
-    var parts = raw.split(',');
-    var name = tidyName(parts[0].trim());
-
-    /* the category the user pinned wins, otherwise auto-detect */
-    var cat = state.addCategory !== 'auto' ? state.addCategory : guessCategory(name);
-    var qty = { n: state.addQty.n, u: state.addQty.u };
-
-    /* "apples, 3 kg" typed by hand overrides the picker */
-    if (parts.length > 1) qty = parseQty(parts.slice(1).join(',').trim() || '1 pc');
-
+  /* push an item onto the active list (no validation — callers do that) */
+  function pushItem(name, qty, cat) {
     var list = activeList();
     list.items.push({
-      id: 'n' + Date.now(),
-      name: name,
+      id: 'n' + Date.now() + Math.floor(Math.random() * 100),
+      name: tidyName(name),
       qty: qty,
       cat: cat,
       aisle: catName(cat),
@@ -1259,28 +1406,66 @@
       done: false
     });
     save();
-    render();
-    state.addQtyTouched = false;
-    toast('Added “' + name + '” · ' + qtyText(qty) + ' → ' + catName(cat));
-    var ni = $('#new-item'); if (ni) ni.focus();
   }
 
-  function addSuggestion(name, cat, n, u) {
-    var list = activeList();
-    var useCat = cat || (state.addCategory !== 'auto' ? state.addCategory : guessCategory(name));
-    var qty = { n: (n === undefined || n === '' ? 1 : Number(n)), u: u || 'pc' };
-    list.items.push({
-      id: 'n' + Date.now(),
-      name: tidyName(name),
-      qty: qty,
-      cat: useCat,
-      aisle: catName(useCat),
-      owner: (state.members.filter(function (m) { return m.you; })[0] || state.members[0]).id,
-      done: false
-    });
-    save();
+  /* step 2 -> actually put it on the list */
+  function confirmAdd() {
+    var m = state.addModal;
+    if (!m || !m.draft) return;
+    var name = (($('#rv-name') || {}).value || '').trim();
+    if (!name) { showQtyError('Give the product a name.'); return; }
+
+    var v = validateQty(($('#rv-n') || {}).value, m.draft.u);
+    if (!v.ok) { showQtyError(v.msg); return; }
+
+    pushItem(name, { n: v.n, u: m.draft.u }, $('#rv-cat') ? $('#rv-cat').value : m.draft.cat);
+    closeAddModal();
     render();
-    toast('Added “' + name + '” · ' + qtyText(qty) + ' → ' + catName(useCat));
+    toast('Added “' + tidyName(name) + '” · ' + v.n + ' ' + unitLabel(m.draft.u) + ' → ' + catName(m.draft.cat));
+  }
+
+  function showQtyError(msg) {
+    var el = $('#rv-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    var n = $('#rv-n');
+    if (n) { n.classList.add('invalid'); n.focus(); }
+  }
+
+  function clearQtyError() {
+    var el = $('#rv-error');
+    if (el) { el.hidden = true; el.textContent = ''; }
+    var n = $('#rv-n');
+    if (n) n.classList.remove('invalid');
+  }
+
+  /* a suggestion was picked -> go to the review step, never add straight away */
+  function reviewSuggestion(name, cat, n, u) {
+    var useCat = cat || (state.addCategory !== 'auto' ? state.addCategory : guessCategory(name));
+    state.addModal.step = 'review';
+    state.addModal.draft = {
+      name: name,
+      cat: useCat,
+      n: (n === undefined || n === '' ? 1 : Number(n)),
+      u: u || 'pcs'
+    };
+    renderAddModal();
+  }
+
+  /* typed something that is not in the catalogue -> review it too */
+  function reviewTyped() {
+    var q = (state.addModal.query || '').trim();
+    if (!q) return;
+    var v = validateQty(state.addQty.n, state.addQty.u);
+    state.addModal.step = 'review';
+    state.addModal.draft = {
+      name: q,
+      cat: state.addCategory !== 'auto' ? state.addCategory : guessCategory(q),
+      n: v.ok ? v.n : state.addQty.n,
+      u: state.addQty.u
+    };
+    renderAddModal();
   }
 
   function saveItemEdit(id) {
@@ -1289,14 +1474,22 @@
     var name = (nameEl.value || '').trim();
     if (!name) { nameEl.classList.add('invalid'); nameEl.focus(); return; }
     nameEl.classList.remove('invalid');
+
+    var unit = state.editUnit || 'pcs';
+    var v = validateQty(nEl ? nEl.value : '', unit);
+    if (!v.ok) {
+      nEl.classList.add('invalid');
+      showEditError(v.msg);
+      return;
+    }
+    nEl.classList.remove('invalid');
+    clearEditError();
+
     var list = activeList();
     list.items.forEach(function (it) {
       if (it.id === id) {
         it.name = name;
-        if (nEl) {
-          var n = parseFloat(nEl.value);
-          it.qty = { n: (isNaN(n) ? 1 : n), u: state.editUnit || it.qty.u };
-        }
+        it.qty = { n: v.n, u: unit };
         it.cat = catEl.value;
         it.aisle = catName(catEl.value);
       }
@@ -1305,17 +1498,6 @@
     save();
     render();
     toast('Item updated');
-  }
-
-  function refreshSuggestions() {
-    var input = $('#new-item');
-    var panel = $('#sug-panel');
-    if (!input || !panel) return;
-    /* pre-fill the amount + unit from the best catalogue match, until the
-       user sets it by hand */
-    if (!state.addQtyTouched) state.addQty = defaultQtyFor(input.value);
-    panel.innerHTML = suggestPanelHtml(input.value);
-    panel.hidden = false;
   }
 
   function invite() {
@@ -1509,8 +1691,8 @@
     $('#view-app').addEventListener('click', onAppClick);
     $('#view-app').addEventListener('input', onAppInput);
     $('#view-app').addEventListener('change', onAppChange);
-    $('#view-app').addEventListener('focusin', onAppFocusIn);
-    $('#view-app').addEventListener('focusout', onAppFocusOut);
+    $('#add-modal').addEventListener('click', onAppClick);
+    $('#add-modal').addEventListener('input', onAppInput);
     $('#cat-modal').addEventListener('click', onCatPanelClick);
     $('#cat-modal').addEventListener('change', onCatPanelChange);
     $('#cat-modal').addEventListener('keydown', onCatPanelKeydown);
@@ -1520,11 +1702,16 @@
     window.addEventListener('hashchange', onHashChange);
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && e.target && e.target.id === 'new-item') { e.preventDefault(); addItem(); }
+      if (e.key === 'Enter' && e.target && e.target.id === 'add-search') {
+        e.preventDefault();
+        reviewTyped();
+        return;
+      }
       if (e.key === 'Escape') {
         closeDrawer();
         toggleProfileMenu(false);
         if (state.catPanelOpen) closeCategories();
+        if (state.addModal && state.addModal.open) closeAddModal();
       }
     });
 
@@ -1538,6 +1725,8 @@
   }
 
   function onAppClick(e) {
+    /* clicking the backdrop closes the add modal */
+    if (e.target && e.target.id === 'add-modal') { closeAddModal(); return; }
     var el = e.target.closest ? e.target.closest('[data-act],[data-route],[data-list],[data-tab],[data-cal],[data-srange],[data-pantry],[data-scat],[data-sug-name],[data-unit]') : null;
     if (!el) return;
 
@@ -1549,9 +1738,27 @@
       $$('.unit-chip', picker).forEach(function (c) { c.classList.toggle('is-active', c === el); });
       if (picker.id === 'edit-unit-picker') {
         state.editUnit = el.dataset.unit;
+        var eu = unitDef(el.dataset.unit);
+        var eh = document.querySelector('.item-pop .qty-hint');
+        if (eh) eh.textContent = 'Up to ' + unitQty(eu, eu.max) + ' in one trip. Decimals are fine — ' + unitExample(eu) + ' works.';
+        clearEditError();
+      } else if (picker.id === 'rv-unit-picker') {
+        if (state.addModal && state.addModal.draft) state.addModal.draft.u = el.dataset.unit;
+        var ru = unitDef(el.dataset.unit);
+        var rh = document.querySelector('.review .qty-hint');
+        if (rh) rh.textContent = 'Up to ' + unitQty(ru, ru.max) + ' in one trip. Decimals are fine — ' + unitExample(ru) + ' works.';
+        clearQtyError();
       } else {
         state.addQty.u = el.dataset.unit;
         state.addQtyTouched = true;
+        var su = unitDef(el.dataset.unit);
+        var sh = document.querySelector('.sug-qty-hint');
+        if (sh) sh.textContent = 'max ' + unitQty(su, su.max);
+        var sn = $('#sug-qty-n');
+        if (sn) {
+          var sv = validateQty(sn.value, el.dataset.unit);
+          sn.classList.toggle('invalid', !sv.ok && sn.value.trim() !== '');
+        }
       }
       return;
     }
@@ -1563,7 +1770,7 @@
       return;
     }
     if (el.dataset.sugName) {
-      addSuggestion(el.dataset.sugName, el.dataset.sugCat, el.dataset.sugN, el.dataset.sugU);
+      reviewSuggestion(el.dataset.sugName, el.dataset.sugCat, el.dataset.sugN, el.dataset.sugU);
       return;
     }
 
@@ -1660,12 +1867,17 @@
       case 'cancel-edit':
         state.editingId = null; render();
         break;
-      case 'add-query': {
-        var qi = $('#new-item');
-        addItem(qi ? qi.value : '');
+      case 'open-add': openAddModal(''); break;
+      case 'close-add': closeAddModal(); break;
+      case 'add-back':
+        state.addModal.step = 'search';
+        state.addModal.draft = null;
+        renderAddModal();
         break;
-      }
-      case 'add-item': addItem(); break;
+      case 'confirm-add': confirmAdd(); break;
+      case 'add-query': reviewTyped(); break;
+      case 'add-named': openAddModal(el.dataset.name || ''); break;
+      case 'clear-search': state.listQuery = ''; render(); break;
       case 'new-list': newList(); break;
       case 'new-pantry': toast('Pantry capture is part of the next build'); break;
       case 'new-event': toast('Event editor is part of the next build'); break;
@@ -1688,42 +1900,49 @@
   function onAppInput(e) {
     var t = e.target;
     if (!t) return;
-    if (t.id === 'new-item') {
-      showSuggestions();
-      refreshSuggestions();
+    var id = t.id;
+
+    /* the find-in-list search only filters the list */
+    if (id === 'list-search') {
+      state.listQuery = t.value;
+      render();
+      var again = $('#list-search');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
       return;
     }
-    if (t.id === 'sug-qty-n') {
-      var n = parseFloat(t.value);
-      state.addQty.n = isNaN(n) ? 1 : n;
-      state.addQtyTouched = true;
+
+    /* the add modal's product search */
+    if (id === 'add-search') {
+      state.addModal.query = t.value;
+      if (!state.addQtyTouched) state.addQty = defaultQtyFor(t.value);
+      renderAddModal();
+      var box = $('#add-search');
+      if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+      return;
+    }
+
+    /* amount fields — validate as you type, no letters allowed */
+    if (id === 'sug-qty-n' || id === 'rv-n' || id === 'edit-qty-n') {
+      var unitKey = id === 'rv-n' ? (state.addModal.draft ? state.addModal.draft.u : 'pcs')
+                : id === 'edit-qty-n' ? (state.editUnit || 'pcs')
+                : state.addQty.u;
+      var v = validateQty(t.value, unitKey);
+      t.classList.toggle('invalid', !v.ok && t.value.trim() !== '');
+      t.setAttribute('aria-invalid', v.ok ? 'false' : 'true');
+      if (id === 'rv-n') { if (v.ok) clearQtyError(); else showQtyError(v.msg); }
+      if (id === 'edit-qty-n') { if (v.ok) clearEditError(); else showEditError(v.msg); }
+      if (id === 'sug-qty-n' && v.ok) {
+        state.addQty.n = v.n;
+        state.addQtyTouched = true;
+      }
+      return;
     }
   }
 
   function onAppChange(e) {
     var t = e.target;
     if (!t) return;
-    if (t.id === 'sug-qty-u') {
-      state.addQty.u = t.value;
-      state.addQtyTouched = true;
-      return;
-    }
-  }
-  function onAppFocusIn(e) {
-    if (e.target && e.target.id === 'new-item') { showSuggestions(); refreshSuggestions(); }
-  }
-  function onAppFocusOut(e) {
-    if (!e.target || e.target.id !== 'new-item') return;
-    setTimeout(function () {
-      var panel = $('#sug-panel');
-      if (!panel) return;
-      if (panel.contains(document.activeElement)) return;
-      panel.hidden = true;
-    }, 180);
-  }
-  function showSuggestions() {
-    var panel = $('#sug-panel');
-    if (panel) panel.hidden = false;
+    if (t.id === 'list-search') { state.listQuery = t.value; render(); }
   }
 
   /* =============================== CATEGORY PANEL ======================== */
