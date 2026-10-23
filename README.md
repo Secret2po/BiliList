@@ -33,8 +33,9 @@ groupmates on other networks, use the public URL:
 
 > The local server is **not** the demo path. `127.0.0.1` is this PC only, and a
 > `192.168.x.x` address is private to your Wi-Fi, so groupmates on other
-> networks cannot open it. Google sign-in also returns to the origin you started
-> from, so the public HTTPS URL must be the one allowed in Supabase. See
+> networks cannot open it. The primary Google button uses Google Identity
+> Services, so the public origin must be allowed in Google Cloud. Email links
+> and the Supabase OAuth fallback return to the origin allowed in Supabase. See
 > [`DEPLOY.md`](DEPLOY.md).
 
 > `serve.py` is the same as `python -m http.server` except it sends `no-store`
@@ -97,9 +98,10 @@ the Supabase table editor (or sign in with a fresh account).
 * Split layout: credential form on the left, product hero on the right.
 * Warm `#FEF0CB` header and footer bands, with **Create an account** as the
   top-right shortcut.
-* **Continue with Google** via Supabase OAuth (`prompt=select_account`). A
-  cancelled chooser stays on the login screen and shows an error; a chosen
-  account lands on `#/dashboard`.
+* **Continue with Google** via Google Identity Services → Supabase
+  `signInWithIdToken`. The account chooser shows the app's domain; a cancelled
+  chooser stays on the login screen. The Supabase OAuth redirect remains as a
+  fallback.
 * Email + password with inline validation, show/hide password toggle,
   "Remember me", "Forgot password?".
 * **Create an account** / **Sign up for free** flips the form into a sign-up state
