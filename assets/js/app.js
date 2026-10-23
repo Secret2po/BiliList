@@ -2718,6 +2718,8 @@
 
   function showLogin() {
     setGoogleBusy(false);
+    var loginBtn = $('#btn-login');
+    if (loginBtn) loginBtn.disabled = false;
     $('#view-app').classList.add('hidden');
     $('#view-login').classList.remove('hidden');
     setupGoogleButton();
