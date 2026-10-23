@@ -113,7 +113,7 @@ development, or use the public URL everywhere.
 | Google popup says the app is blocked, or `Access blocked` | Add the demo account as a **Test user** in Google Cloud → OAuth consent screen, or publish the app. |
 | `Google sign-in failed the nonce check` | Supabase → Authentication → Providers → Google → turn on **Skip nonce checks**, then try again. |
 | Google button says **Continue as [Name]** | Google remembers the last account. Click the small arrow on the button to choose a different Google account. |
-| Google button is dimmed / cannot be clicked after sign-out | Hard-refresh. The latest `app.js` clears the busy state on sign-out; confirm the page loaded `app.js?v=4` or later. |
+| Google button is dimmed / cannot be clicked after sign-out | Hard-refresh. The latest `app.js` clears the busy state on sign-out; confirm the page loaded `app.js?v=6` or later. |
 | A new Google account goes straight to the dashboard | Hard-refresh to load the latest `app.js`. The account-creation step is triggered when the profile has no username yet. |
 | The old `...supabase.co` name still appears | Hard-refresh the page. The primary flow should show Google's official button. If you see the green custom button, the Direct Google Sign-In script or `googleClientId` did not load, and the app is using the Supabase OAuth fallback. |
 | Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set Supabase **Site URL** to the public URL and add the public URL under **Redirect URLs**. |
