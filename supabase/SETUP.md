@@ -1,7 +1,9 @@
 # Connecting BiliLIST to Supabase
 
-The prototype runs in **demo mode** out of the box (everything in `localStorage`).
-This guide turns on the real database, real accounts and email codes.
+BiliLIST keeps signed-in data in Supabase. This guide connects the project,
+runs the schema, turns on real accounts and explains where each screen stores
+its rows. If Supabase is not configured the app still runs in **demo mode**
+(everything in `localStorage`).
 
 ---
 
@@ -32,8 +34,29 @@ That script creates:
 | `events` | calendar entries, optionally linked to a list |
 | `activity` | the "a shared effort" feed |
 
-Plus the triggers, the password-uniqueness functions and **row level security
-policies** that enforce the Owner / Editor / Viewer rules.
+It also creates:
+
+* **Row level security policies** that enforce the Owner / Editor / Viewer rules
+  and keep each workspace's rows private.
+* `handle_new_user()` — a new account gets a profile, a starter workspace and
+  the default categories.
+* `seed_workspace(uuid)` — the one place that writes the starter categories and
+  the first list. It is used by the sign-up trigger and by the RPC below.
+* `ensure_user_workspace()` — an **authenticated RPC** the app calls right after
+  sign-in. It returns the user's workspace and creates one (plus the starter
+  data) for accounts that do not have one yet. This covers accounts created
+  before the trigger existed.
+* `move_item_to_pantry()` / `remove_item_from_pantry()` — triggers that keep
+  `pantry` in sync when an item is checked off, unchecked or deleted.
+* `pantry_workspace_name_key` — a case-insensitive unique index so one product
+  is one pantry line per workspace, which makes the trigger upsert safe.
+
+> **Upgrading an existing project?** Re-run the whole `schema.sql`. It is safe to
+> repeat: tables use `if not exists`, functions use `create or replace`, and the
+> migration code removes duplicate pantry rows before it adds the unique index.
+> After running it, the older prototype data in `localStorage` is imported once
+> the first time the account signs in against an empty workspace, then the local
+> blob is deleted.
 
 ## 3. Add your keys (1 min)
 
@@ -189,15 +212,22 @@ verification outstanding.
   not a member of a workspace cannot read or write any of its rows, even with
   a valid session.
 - The `move_item_to_pantry` trigger keeps `pantry` in sync automatically when
-  an item is checked off, so the app does not have to do it in two places.
+  an item is checked off, unchecked or deleted, so the app does not have to do
+  it in two places.
 
-## Next steps when the backend is live
+## Where the app stores each screen
 
-The frontend still reads and writes `localStorage`. Swapping it to the real
-tables means replacing the `state` mutations in `assets/js/app.js` with
-Supabase calls — the rendering code does not have to change:
+| Screen | Table | Notes |
+| --- | --- | --- |
+| **To Buy** tab | `items` | `done = false` |
+| **Pantry** tab | `items` | `done = true`; the trigger also tops up `pantry` |
+| **Inventory** tab / *Pantry & inventory* | `pantry` | one case-insensitive row per product |
+| Lists | `lists` | scoped to the workspace |
+| Category manager | `categories` | rename, keywords, add, delete |
+| Last list, route, spending range | `localStorage` | small UI preference only |
 
-```js
-// instead of: list.items.push({...})
-await S.client.from('items').insert({ list_id: id, name: 'Avocados', qty_amount: 2, qty_unit: 'pcs' });
-```
+`assets/js/app.js` hydrates the workspace once after sign-in
+(`ensure_user_workspace()` → categories, lists, items, pantry, members) and then
+writes each mutation back to the matching table. The render functions never talk
+to Supabase, so a real-time subscription can be added later without touching the
+markup.

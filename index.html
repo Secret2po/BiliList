@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FDFCF7">
+<meta name="color-scheme" content="light">
 <title>BiliLIST — A little order, a lighter day.</title>
 <meta name="description" content="BiliLIST is a shared grocery and task list for households, roommates and friend groups. One live list everyone can edit.">
 <link rel="icon" href="assets/img/logo-mark.svg" type="image/svg+xml">
@@ -379,6 +381,12 @@
 </aside>
 
 <div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- ===================== CLOUD LOADING OVERLAY ===================== -->
+<div class="app-loading hidden" id="app-loading" role="status" aria-live="polite">
+  <span class="app-loading-spinner" aria-hidden="true"></span>
+  <p id="app-loading-text">Loading your saved lists…</p>
+</div>
 
 <!-- ===================== ADD ITEM MODAL ===================== -->
 <div class="modal" id="add-modal" role="dialog" aria-modal="true" aria-label="Add an item">

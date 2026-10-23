@@ -1404,3 +1404,178 @@ svg { display: block; }
   .ls-pill { height: 40px; font-size: 13px; gap: 6px; }
   .item-row { grid-template-columns: 22px minmax(0,1fr) 54px 28px 22px 22px; gap: 8px; padding: 11px 14px; }
 }
+
+/* ==========================================================================
+   CLOUD LOADING + PHONE REFINEMENTS
+   ========================================================================== */
+.app-loading {
+  position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; padding: 24px;
+  background: rgba(253,252,247,.94); backdrop-filter: blur(8px);
+  color: var(--ink-soft); font-size: 14px; text-align: center;
+}
+.app-loading.hidden { display: none !important; }
+.app-loading-spinner {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid var(--green-100); border-top-color: var(--green-600);
+  animation: bilispin .8s linear infinite;
+}
+@keyframes bilispin { to { transform: rotate(360deg); } }
+
+html { -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+.app-view { min-height: 100vh; min-height: 100dvh; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, .main-tab, .mnav-item, .ls-pill, .unit-chip, .sug-cat, .tone-dot { touch-action: manipulation; }
+
+/* touch devices have no hover, so the delete button must always be visible */
+@media (hover: none), (pointer: coarse) {
+  .item-del { opacity: 1; visibility: visible; }
+  .list-tile:hover { transform: none; }
+}
+
+@media (max-width: 760px) {
+  :root { --topbar-h: 62px; }
+  .topbar { height: 62px; }
+  .topbar-inner { gap: 8px; }
+  .brand-mark { width: 34px; height: 34px; }
+  .brand-name { font-size: 19px; }
+  .brand-tag { font-size: 10px; }
+  .icon-btn { width: 38px; height: 38px; }
+  .user-chip { padding: 4px 6px; gap: 6px; }
+  .avatar { width: 32px; height: 32px; }
+
+  .login-main { padding: 24px 16px 40px; align-items: flex-start; }
+  .login-grid { gap: 24px; }
+  .login-form-col { width: 100%; max-width: 460px; }
+  .login-form-col h1 { font-size: clamp(27px, 8vw, 34px); }
+  .login-card { padding: 20px 18px; }
+  .login-hero-col { display: none; }
+
+  .page { padding: 16px 12px calc(30px + env(safe-area-inset-bottom)); }
+  .page-head { align-items: flex-start; gap: 12px; }
+  .page-head h1 { font-size: 21px; }
+  .page-head p { font-size: 12.5px; }
+  .page-head-actions { flex-wrap: wrap; }
+  .page-head-actions .btn-new { min-height: 42px; }
+
+  .list-title-row { flex-wrap: wrap; gap: 10px; }
+  .list-title-row > div:first-child { min-width: 0; flex: 1 1 180px; }
+  .list-actions { margin-left: auto; }
+  .list-switch {
+    overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .list-switch::-webkit-scrollbar { display: none; }
+  .ls-pill { flex: none; }
+  .list-toolbar { flex-wrap: wrap; }
+  .find-input { flex: 1 1 180px; min-width: 0; }
+
+  .item-row { grid-template-columns: 28px minmax(0,1fr) 54px 28px 34px 34px; gap: 6px; padding: 10px 12px; align-items: center; }
+  .item-name { min-width: 0; overflow-wrap: anywhere; }
+  .item-qty { white-space: nowrap; }
+  .item-edit, .item-del { width: 34px; height: 34px; display: grid; place-items: center; }
+  .item-del { opacity: 1; visibility: visible; }
+  .tick { width: 28px; height: 28px; }
+  .item-pop { left: 8px; right: 8px; width: auto; max-width: none; }
+  .pop-foot { flex-wrap: wrap; }
+  .pop-save, .pop-cancel { min-height: 42px; }
+
+  .modal { padding: 10px; align-items: flex-end; }
+  .modal-box { max-height: calc(100dvh - 20px); border-radius: 18px 18px 12px 12px; }
+  .modal-body { padding: 16px; }
+  .modal-head { padding: 16px; }
+  .modal-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); flex-wrap: wrap; }
+
+  .cat-row { grid-template-columns: 18px minmax(0,1fr) 64px 32px; gap: 8px; }
+  .cat-row .cat-kws { grid-column: 2 / 4; }
+  .cat-row .cat-del { grid-column: 4; grid-row: 1 / span 2; }
+  .cat-row .cat-kw-panel { grid-column: 1 / -1; }
+  .cat-new { grid-template-columns: 1fr; }
+  .cat-new .tone-picker { justify-content: flex-start; flex-wrap: wrap; }
+  .tone-picker { gap: 7px; }
+
+  .inv-head, .inv-row { grid-template-columns: 28px minmax(0,1fr) 78px 40px; }
+  .inv-head span:first-child { padding-left: 0; }
+  .inv-add { font-size: 0; width: 40px; padding: 0; justify-content: center; }
+  .inv-add svg { width: 17px; height: 17px; }
+
+  .pantry-head, .pantry-row { grid-template-columns: 28px minmax(0,1fr) 88px 40px; }
+  .pantry-head span:first-child { padding-left: 0; }
+  .pantry-row .p-exp, .pantry-head span:nth-child(3) { display: none; }
+  .pantry-row .p-ok, .pantry-row .p-add { grid-column: 4; justify-self: end; }
+  .pantry-row .p-add { font-size: 0; width: 40px; padding: 0; justify-content: center; }
+  .pantry-row .p-add svg { width: 17px; height: 17px; }
+
+  .dash { display: flex; flex-direction: column; gap: 14px; }
+  .dash-left, .dash-center, .dash-right { display: contents; }
+  .greet { order: 1; }
+  .space-card { order: 2; }
+  .list-card { order: 3; }
+  .spend-card { order: 4; }
+  .tip-card { order: 5; }
+  .life-card { order: 6; }
+  .cal-card { order: 7; }
+  .coming-card { order: 8; }
+  .effort-card { order: 9; }
+  .greet .greet-meta { align-items: stretch; }
+  .greet .greet-meta .btn-new { margin-left: 0; width: 100%; justify-content: center; }
+  .greet h1 { font-size: 23px; }
+  .greet p { font-size: 12.5px; }
+  .card { border-radius: 14px; }
+  .stat-grid { gap: 10px; }
+  .spend-layout { gap: 14px; }
+  .big-chart-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .chart-area { overflow-x: auto; }
+  .toast-wrap { width: calc(100% - 24px); bottom: calc(74px + env(safe-area-inset-bottom)); }
+  .toast { max-width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .brand-tag { display: none; }
+  .topbar-inner { padding: 0 10px; }
+  .login-top-right { gap: 6px; }
+  .login-top .btn-signup { padding: 0 10px; font-size: 12px; }
+  .login-main { padding-left: 12px; padding-right: 12px; }
+  .login-card { padding: 18px 14px; border-radius: 16px; }
+  .login-form-col h1 { font-size: 26px; }
+  .login-sub { font-size: 13px; }
+
+  .page-head { flex-direction: column; align-items: stretch; }
+  .page-head-actions .btn-new { width: 100%; justify-content: center; }
+  .list-toolbar { padding: 10px 12px; }
+  .find-input { flex: 1 1 100%; }
+  .list-toolbar .btn-add { flex: 1 1 100%; justify-content: center; }
+  .list-actions { width: 100%; justify-content: flex-end; }
+  .list-actions .btn-share { flex: 1; justify-content: center; }
+
+  .item-row { grid-template-columns: 28px minmax(0,1fr) 58px 38px 38px; gap: 6px; padding: 10px; }
+  .item-owner { display: none; }
+  .item-qty { font-size: 12px; }
+  .aisle-head { padding: 9px 10px; }
+  .aisle-cols { display: none; }
+  .item-pop { left: 0; right: 0; width: auto; border-radius: 14px; }
+
+  .modal { padding: 0; }
+  .modal-box { max-height: 100dvh; height: auto; border-radius: 18px 18px 0 0; }
+  .modal-box--add { min-height: 100dvh; border-radius: 0; }
+  .drawer { width: 100%; max-width: 100%; }
+
+  .inv-row { grid-template-columns: 28px minmax(0,1fr) 66px 38px; gap: 7px; padding: 10px; }
+  .pantry-head, .pantry-row { grid-template-columns: 28px minmax(0,1fr) 74px 38px; gap: 7px; padding: 10px; }
+  .cat-row { grid-template-columns: 18px minmax(0,1fr) 56px 32px; }
+  .cat-row .cat-kws { grid-column: 2 / 5; }
+  .cat-row .cat-del { grid-column: 4; grid-row: 1; }
+  .cat-name { font-size: 16px; }
+  .cat-new { padding: 12px; }
+
+  .stat-grid, .dash-right { grid-template-columns: 1fr; }
+  .toast-wrap { bottom: calc(72px + env(safe-area-inset-bottom)); }
+}
+
+/* iOS zooms the page when a focused form field is under 16px. */
+@media (max-width: 760px) {
+  input.input, select, textarea, .input { font-size: 16px; }
+  .unit-chip, .sug-cat, .role-select { font-size: 14px; }
+  .main-tab { font-size: 15px; }
+}

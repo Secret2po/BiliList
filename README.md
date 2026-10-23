@@ -6,8 +6,12 @@ A shared grocery + task list web application for households, roommates and frien
 groups. This repository contains a **clickable, high-fidelity front-end prototype**
 built from the BiliLIST UI mockups and the CS 3114 Feasibility Study / SPMP.
 
-> **Status:** Prototype (front-end only). No backend yet — all data is sample data
-> held in the browser's `localStorage`. See *Roadmap to the real build* below.
+> **Status:** Working prototype with a live Supabase backend. Signed-in accounts
+> keep **To Buy**, **Pantry** and **Inventory** on the server, so the lists are
+> still there the next time you open the site — on a phone or a desktop.
+> `localStorage` is only used for demo mode and as a one-time import for data
+> created before the backend was connected. See *Roadmap to the real build*
+> below.
 
 ---
 
@@ -28,23 +32,44 @@ There is **no build step and no dependencies to install**. Pick whichever is eas
 
 **Logging in:** the prototype connects to Supabase when `assets/js/config.js`
 contains a project URL and publishable key (it does by default). Use
-**Continue with Google** after enabling the Google provider once, or sign in
-with an email and password. Both routes land on the dashboard. If Supabase is
-not configured, the screen falls back to demo mode so the prototype can still be
-shown.
+**Continue with Google** or sign in with an email and password. Both routes land
+on the dashboard. The Supabase schema in `supabase/schema.sql` **must be run
+once** before the first sign-in; the steps are in
+[`supabase/SETUP.md`](supabase/SETUP.md). If Supabase is not configured, the
+screen falls back to demo mode so the prototype can still be shown.
 
 > Google setup (Google Cloud client + Supabase provider + redirect URLs) is in
 > [`supabase/SETUP.md`](supabase/SETUP.md#5-turn-on-google-sign-in). Cancelling
 > the Google account chooser returns to the login screen with a message and does
 > not sign anyone in.
 
-**Resetting the demo:** the app persists changes to `localStorage`
-(key `bililist.prototype.v1`). To get back to the seeded sample data, run this in
+**What is saved where**
+
+| Data | Signed in (Supabase) | Demo mode |
+| --- | --- | --- |
+| To Buy / Pantry items | `items` table (`done = false` / `true`) | `localStorage` |
+| Inventory | `pantry` table | `localStorage` |
+| Lists | `lists` table | `localStorage` |
+| Categories | `categories` table | `localStorage` |
+| UI prefs (last list, route, spending range) | `localStorage` | `localStorage` |
+
+Right after the first sign-in on an account whose cloud workspace is still
+empty, any lists left in `localStorage` from the earlier prototype are copied up
+once and the old blob is removed. Checking an item off updates the pantry on the
+server through a database trigger, so unchecking it takes the same amount back
+out and deleting a bought item removes its contribution.
+
+**Resetting the demo:** in demo mode the app persists changes to `localStorage`
+(key `bililist.prototype.v2`). To get back to the seeded sample data, run this in
 the browser console:
 
 ```js
 __bililist.reset();   // clears storage and reloads
 ```
+
+Signed-in data lives on the server, so **Sign out** clears the browser copy and
+the next sign-in fetches it again. To wipe the server data, delete the rows in
+the Supabase table editor (or sign in with a fresh account).
 
 ---
 
@@ -116,7 +141,9 @@ against the warm cream page background.
 
 ### Screen 2b — Custom categories (the "Customize categories" panel)
 The tag button in the list header opens a modal where the household controls
-its own taxonomy. Everything is saved to `localStorage` and applies everywhere.
+its own taxonomy. In Supabase mode the changes are saved to the workspace's
+`categories` rows and apply everywhere (in demo mode they stay in
+`localStorage`).
 
 * **Rename any category** — e.g. turn *Produce* into *Fruits & Veg*. The new
   name shows up in the list, the add-item search and the reports immediately.
@@ -185,6 +212,29 @@ Right-hand slide-over drawer, exactly as in the mockup.
 
 ---
 
+## 2d. Phone layout
+
+The same screens adapt down to a phone without a separate mobile app:
+
+* The viewport uses `viewport-fit=cover`, a warm `theme-color` and a fixed
+  bottom tab bar, so Chrome and Brave on Android and Safari on iOS get a
+  full-height, notch-aware page.
+* The dashboard columns collapse to one column and reorder so the greeting and
+  the active list come first; the spending cards follow.
+* Item rows keep the tick, name, quantity and both edit/delete buttons visible
+  (delete is always shown on touch devices), and the delete target is a full
+  38 px square.
+* The add-item modal becomes full-screen, the category manager stacks, and the
+  list toolbar puts the search field and **Add item** on their own rows.
+* The login screen focuses on the form; the decorative hero is hidden under
+  760 px. The `#FEF0CB` header and footer band is unchanged.
+* Form fields use 16 px type on small screens so iOS does not zoom when a field
+  gains focus.
+
+Tested at 390 px and 360 px widths with no horizontal overflow.
+
+---
+
 ## 3. File layout
 
 ```
@@ -192,11 +242,16 @@ BiliList/
 ├── index.html              # app shell + login screen markup + SVG icon sprite
 ├── preview.html            # dev helper: renders the app in a 1440px frame
 ├── serve.py                # no-cache local server (edits show up on refresh)
+├── supabase/
+│   ├── schema.sql          # tables, RLS policies, workspace + pantry triggers
+│   └── SETUP.md            # connect the project, Google sign-in, email codes
 ├── assets/
-│   ├── css/styles.css      # all styling (design tokens at the top)
+│   ├── css/styles.css      # all styling (design tokens + mobile breakpoints)
 │   ├── js/
+│   │   ├── config.js       # Supabase project URL + publishable key
+│   │   ├── supabase-client.js  # loads the SDK and exposes one client
 │   │   ├── data.js         # sample data + aisle auto-detection rules
-│   │   └── app.js          # state, rendering, router, interactions
+│   │   └── app.js          # state, rendering, router, Supabase CRUD
 │   └── img/
 │       ├── logo-mark.svg   # BiliLIST badge (vector, recreated from the logo)
 │       └── BiliLIST_logo2.jpg  # ← drop your original artwork here
@@ -261,24 +316,25 @@ still reads correctly if Google Fonts is unreachable (e.g. offline demo).
 ## 6. Roadmap to the real build
 
 The SPMP schedules a **Working Prototype in Week 9**, with Increment 3
-(Notification & Real-time Synchronization) landing in Weeks 10–12. The pieces
-still to build, in order:
+(Notification & Real-time Synchronization) landing in Weeks 10–12. Already in
+place: a **Supabase backend** (Postgres + row level security), real email and
+Google accounts, per-workspace categories/lists/items/pantry, and a responsive
+phone layout.
 
-1. **Backend** — Node.js + MySQL, REST endpoints for users, households, lists,
-   items, events and transactions.
-2. **Auth** — real registration, password hashing, sessions and the
-   *User Session & Collaboration Controller* that enforces household membership.
-3. **Real-time sync** — a WebSocket layer so several members editing the same
-   list see each other's changes live.
-4. **Offline fallback** — a local queue (IndexedDB) that replays edits once the
+Still to build, in order:
+
+1. **Real-time sync** — Supabase Realtime so several members editing the same
+   list see each other's changes live, instead of on the next refresh.
+2. **Offline fallback** — a local queue (IndexedDB) that replays edits once the
    connection returns.
-5. **Notifications** — push/email reminders for the calendar and for a shared
+3. **Notifications** — push/email reminders for the calendar and for a shared
    list being changed.
-6. **Mobile** — React Native or Flutter sharing the same REST contract.
+4. **Household management** — wired-up invites, role changes and workspace
+   switching (the UI exists; the Supabase calls are the next step).
 
-The front-end in this repository was written to make that swap painless: all
-screen markup is produced by small `render*()` functions in `assets/js/app.js`,
-so a React/Vue rewrite or a swap to fetch-based data access touches one file.
+All screen markup is produced by small `render*()` functions in
+`assets/js/app.js`, so swapping a surface to fetch-based data access or moving to
+a native shell touches one file.
 
 ---
 

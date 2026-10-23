@@ -269,6 +269,23 @@ create index if not exists idx_pantry_ws      on public.pantry(workspace_id);
 create index if not exists idx_events_ws_time  on public.events(workspace_id, starts_at);
 create index if not exists idx_activity_ws     on public.activity(workspace_id, created_at desc);
 
+-- one pantry line per product per workspace, ignoring case. This also lets the
+-- "checked off -> pantry" trigger upsert safely instead of creating duplicates.
+with ranked_pantry as (
+  select ctid,
+         row_number() over (
+           partition by workspace_id, lower(name)
+           order by updated_at desc nulls last, ctid
+         ) as rn
+  from public.pantry
+)
+delete from public.pantry p
+using ranked_pantry r
+where p.ctid = r.ctid and r.rn > 1;
+
+create unique index if not exists pantry_workspace_name_key
+  on public.pantry (workspace_id, lower(name));
+
 -- --------------------------------------------------------------------------
 --  4. Helper functions used by the row level security policies
 -- --------------------------------------------------------------------------
@@ -330,7 +347,102 @@ revoke all on function public.username_available(text) from public;
 grant execute on function public.username_available(text) to anon, authenticated;
 
 -- --------------------------------------------------------------------------
---  5. Triggers
+--  5. Workspace bootstrapping
+--  A brand-new account gets a workspace from the auth trigger. Existing
+--  accounts (or accounts whose trigger did not run) can call the RPC below to
+--  get one on demand. Both paths use seed_workspace() so the starter data
+--  stays in one place.
+-- --------------------------------------------------------------------------
+create or replace function public.seed_workspace(p_workspace uuid)
+returns void
+language sql
+security definer
+set search_path = public, pg_temp
+as $$
+  insert into public.categories (workspace_id, name, tone, sort_order, keywords) values
+    (p_workspace, 'Produce',            'green', 1,  '{avocado,banana,tomato,apple,lettuce,onion,garlic,carrot,spinach,mango,lemon,cucumber,pepper,potato,calamansi,ampalaya,sitao,kangkung,pechay,ube,suman,binugo}'),
+    (p_workspace, 'Rice & grains',      'navy',  2,  '{rice,bigas,sinangag,corn,mais,oats,flour,arina,pancit,misua,spaghetti,macaroni,cornstarch}'),
+    (p_workspace, 'Meat & poultry',     'red',   3,  '{chicken,beef,pork,lamb,bacon,sausage,hotdog,longganisa,tocino,chorizo,ham,litaw}'),
+    (p_workspace, 'Fish & seafood',     'blue',  4,  '{fish,bangus,tilapia,galunggong,tuna,squid,shrimp,aligue,oyster,tuyo,daing,patis,bagoong}'),
+    (p_workspace, 'Dairy & eggs',       'gold',  5,  '{milk,cheese,egg,butter,yogurt,cream,kefir,margarine,cheddar,mozzarella,parmesan}'),
+    (p_workspace, 'Bakery',             'wheat', 6,  '{bread,bun,bagel,croissant,pastry,tortilla,pandesal,sourdough,loaf,puto,spanish}'),
+    (p_workspace, 'Canned & dried',     'pink',  7,  '{canned,sardines,tuna,corned beef,dried fish,nori,cocoa,canned milk,pineapple,raisins,honey,jam,peanut}'),
+    (p_workspace, 'Sauces & condiments','grey',  8,  '{soy sauce,toyo,vinegar,sukang,bagoong,patis,ketchup,mayonnaise,salamat,sambal,toyomansi,dayok,atchara}'),
+    (p_workspace, 'Snacks & sweets',    'violet',9,  '{chips,biscuit,candy,chocolate,cracker,nuts,popcorn,chicharon,prawn cracker,kwek kwek,fish ball,lumpia,balut,turon,shaved ice}'),
+    (p_workspace, 'Beverages',          'teal',  10, '{juice,soda,water,coffee,tea,cider,beer,wine,milo,kapeng barako,salabat,juice tetra}'),
+    (p_workspace, 'Frozen',             'lime',  11, '{frozen,ice cream,frozen chicken,frozen fish,ice}'),
+    (p_workspace, 'Cleaning',           'blue',  12, '{dishwashing,dish soap,detergent,laundry,soap,sponge,bleach,mop,cleaner,foil,trash,tissue,disinfectant,fabric softener}'),
+    (p_workspace, 'Household & care',   'brown', 13, '{shampoo,soap,toothpaste,toothbrush,deodorant,cotton buds,razor,battery,bulb,diaper,sanitary napkin,lotion}'),
+    (p_workspace, 'Other',              'grey',  14, '{}')
+  on conflict (workspace_id, name) do nothing;
+
+  insert into public.lists (workspace_id, name, kind)
+  select p_workspace, 'The weekly shop', 'grocery'
+  where not exists (
+    select 1 from public.lists where workspace_id = p_workspace
+  );
+$$;
+
+revoke all on function public.seed_workspace(uuid) from public, anon, authenticated;
+
+-- returns the signed-in user's workspace, creating a starter one if needed
+create or replace function public.ensure_user_workspace()
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_ws uuid;
+  v_name text;
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  select m.workspace_id into v_ws
+  from public.workspace_members m
+  where m.user_id = v_uid
+  order by m.joined_at
+  limit 1;
+
+  if v_ws is not null then
+    perform public.seed_workspace(v_ws);
+    return v_ws;
+  end if;
+
+  select coalesce(
+           nullif(trim(p.full_name), ''),
+           nullif(trim(p.username), ''),
+           'Friend'
+         )
+    into v_name
+  from public.profiles p
+  where p.id = v_uid;
+
+  if v_name is null then
+    v_name := 'Friend';
+  end if;
+
+  insert into public.workspaces (name, kind, owner_id)
+  values (v_name || '''s household', 'household', v_uid)
+  returning id into v_ws;
+
+  insert into public.workspace_members (workspace_id, user_id, role, online)
+  values (v_ws, v_uid, 'owner', true)
+  on conflict do nothing;
+
+  perform public.seed_workspace(v_ws);
+  return v_ws;
+end;
+$$;
+
+revoke all on function public.ensure_user_workspace() from public, anon;
+grant execute on function public.ensure_user_workspace() to authenticated;
+
+-- --------------------------------------------------------------------------
+--  6. Triggers
 -- --------------------------------------------------------------------------
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -387,27 +499,10 @@ begin
   returning id into v_ws;
 
   insert into public.workspace_members (workspace_id, user_id, role, online)
-  values (v_ws, new.id, 'owner', true);
+  values (v_ws, new.id, 'owner', true)
+  on conflict do nothing;
 
-  -- the eight starter categories
-  insert into public.categories (workspace_id, name, tone, sort_order, keywords) values
-    (v_ws, 'Produce',            'green', 1,  '{avocado,banana,tomato,apple,lettuce,onion,garlic,carrot,spinach,mango,lemon,cucumber,pepper,potato,calamansi,ampalaya,sitao,kangkung,pechay,ube,suman,binugo}'),
-    (v_ws, 'Rice & grains',      'navy',  2,  '{rice,bigas,sinangag,corn,mais,oats,flour,arina,pancit,misua,spaghetti,macaroni,cornstarch}'),
-    (v_ws, 'Meat & poultry',     'red',   3,  '{chicken,beef,pork,lamb,bacon,sausage,hotdog,longganisa,tocino,chorizo,ham,litaw}'),
-    (v_ws, 'Fish & seafood',     'blue',  4,  '{fish,bangus,tilapia,galunggong,tuna,squid,shrimp,aligue,oyster,tuyo,daing,patis,bagoong}'),
-    (v_ws, 'Dairy & eggs',       'gold',  5,  '{milk,cheese,egg,butter,yogurt,cream,kefir,margarine,cheddar,mozzarella,parmesan}'),
-    (v_ws, 'Bakery',             'wheat', 6,  '{bread,bun,bagel,croissant,pastry,tortilla,pandesal,sourdough,loaf,puto,spanish}'),
-    (v_ws, 'Canned & dried',     'pink',  7,  '{canned,sardines,tuna,corned beef,dried fish,nori,cocoa,canned milk,pineapple,raisins,honey,jam,peanut}'),
-    (v_ws, 'Sauces & condiments','grey',  8,  '{soy sauce,toyo,vinegar,sukang,bagoong,patis,ketchup,mayonnaise,salamat,sambal,toyomansi,dayok,atchara}'),
-    (v_ws, 'Snacks & sweets',    'violet',9,  '{chips,biscuit,candy,chocolate,cracker,nuts,popcorn,chicharon,prawn cracker,kwek kwek,fish ball,lumpia,balut,turon,shaved ice}'),
-    (v_ws, 'Beverages',          'teal',  10, '{juice,soda,water,coffee,tea,cider,beer,wine,milo,kapeng barako,salabat,juice tetra}'),
-    (v_ws, 'Frozen',             'lime',  11, '{frozen,ice cream,frozen chicken,frozen fish,ice}'),
-    (v_ws, 'Cleaning',           'blue',  12, '{dishwashing,dish soap,detergent,laundry,soap,sponge,bleach,mop,cleaner,foil,trash,tissue,disinfectant,fabric softener}'),
-    (v_ws, 'Household & care',   'brown', 13, '{shampoo,soap,toothpaste,toothbrush,deodorant,cotton buds,razor,battery,bulb,diaper,sanitary napkin,lotion}'),
-    (v_ws, 'Other',              'grey',  14, '{}');
-
-  -- a starter shopping list
-  insert into public.lists (workspace_id, name, kind) values (v_ws, 'The weekly shop', 'grocery');
+  perform public.seed_workspace(v_ws);
 
   return new;
 end;
@@ -418,7 +513,8 @@ create trigger trg_handle_new_user
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- checking an item off puts it in the pantry
+-- Checking an item off tops up the pantry. Un-checking it takes the same
+-- amount back out. The unique pantry index makes the upsert safe.
 create or replace function public.move_item_to_pantry()
 returns trigger
 language plpgsql
@@ -427,32 +523,42 @@ set search_path = public, pg_temp
 as $$
 declare
   v_ws uuid;
-  v_cat uuid;
 begin
-  if new.done is not distinct from old.done then
+  if tg_op = 'INSERT' then
+    if not new.done then
+      return new;
+    end if;
+  elsif new.done is not distinct from old.done then
     return new;
   end if;
 
   select l.workspace_id into v_ws from public.lists l where l.id = new.list_id;
+  if v_ws is null then
+    return new;
+  end if;
 
   if new.done then
     new.bought_at := now();
-    select c.id into v_cat from public.categories c
-    where c.workspace_id = v_ws and lower(c.name) = lower(new.name);
-    select c.id into v_cat from public.categories c
-    where c.workspace_id = v_ws and c.id = new.category_id;
 
     insert into public.pantry (workspace_id, name, category_id, qty_amount, qty_unit, expiry, level)
     values (v_ws, new.name, new.category_id, new.qty_amount, new.qty_unit, 'Just bought', 'full')
-    on conflict do nothing;
-
-    update public.pantry
-      set qty_amount = qty_amount + new.qty_amount, updated_at = now()
-      where workspace_id = v_ws and lower(name) = lower(new.name);
+    on conflict (workspace_id, lower(name)) do update
+      set qty_amount = case
+                         when pantry.qty_unit = excluded.qty_unit
+                         then pantry.qty_amount + excluded.qty_amount
+                         else pantry.qty_amount
+                       end,
+          category_id = coalesce(pantry.category_id, excluded.category_id),
+          expiry = excluded.expiry,
+          level = 'full',
+          updated_at = now();
   else
     update public.pantry
       set qty_amount = greatest(0, qty_amount - new.qty_amount), updated_at = now()
       where workspace_id = v_ws and lower(name) = lower(new.name);
+
+    delete from public.pantry
+      where workspace_id = v_ws and lower(name) = lower(new.name) and qty_amount <= 0;
   end if;
 
   return new;
@@ -461,8 +567,43 @@ $$;
 
 drop trigger if exists trg_move_item_to_pantry on public.items;
 create trigger trg_move_item_to_pantry
-  after insert or update of done on public.items
+  before insert or update of done on public.items
   for each row execute function public.move_item_to_pantry();
+
+-- Deleting an already-bought item removes its contribution from the pantry.
+create or replace function public.remove_item_from_pantry()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ws uuid;
+begin
+  if not old.done then
+    return old;
+  end if;
+
+  select l.workspace_id into v_ws from public.lists l where l.id = old.list_id;
+  if v_ws is null then
+    return old;
+  end if;
+
+  update public.pantry
+    set qty_amount = greatest(0, qty_amount - old.qty_amount), updated_at = now()
+    where workspace_id = v_ws and lower(name) = lower(old.name);
+
+  delete from public.pantry
+    where workspace_id = v_ws and lower(name) = lower(old.name) and qty_amount <= 0;
+
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_remove_item_from_pantry on public.items;
+create trigger trg_remove_item_from_pantry
+  after delete on public.items
+  for each row execute function public.remove_item_from_pantry();
 
 -- --------------------------------------------------------------------------
 --  6. Row level security

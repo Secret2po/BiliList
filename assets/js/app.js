@@ -8,6 +8,19 @@
   var D = window.BiliList;
   var STORE_KEY = 'bililist.prototype.v2';
   var OAUTH_PENDING_KEY = 'bililist.oauth.pending';
+  var UI_KEY = 'bililist.ui.v1';
+  var MIGRATE_KEY = 'bililist.migrated.';
+
+  /* When a Supabase session is active, this is the source of truth. The
+     localStorage prototype state is only used for demo / offline mode. */
+  var cloud = {
+    active: false,
+    ready: false,
+    loading: false,
+    userId: null,
+    workspaceId: null,
+    workspace: null
+  };
 
   /* ------------------------------------------------------------------ util */
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -78,6 +91,15 @@
     return (first + second).toUpperCase();
   }
 
+  function prettyName(raw) {
+    var pretty = String(raw || '').replace(/[._-]+/g, ' ').trim().replace(/\s+/g, ' ') || 'You';
+    return pretty.replace(/\b[a-z]/g, function (ch) { return ch.toUpperCase(); });
+  }
+
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+  }
+
   /* There are no demo accounts any more: the household, its members and the
      greeting are all derived from whoever is signed in. */
   function applyUser(user) {
@@ -86,8 +108,7 @@
     var email = (user && user.email) || '';
     var meta = (user && user.user_metadata) || {};
     var raw = meta.username || meta.full_name || (email ? email.split('@')[0] : 'You');
-    var pretty = String(raw).replace(/[._-]+/g, ' ').trim().replace(/\s+/g, ' ') || 'You';
-    pretty = pretty.replace(/\b[a-z]/g, function (ch) { return ch.toUpperCase(); });
+    var pretty = prettyName(raw);
 
     state.members = [{
       id: 'me',
@@ -154,7 +175,12 @@
   }
   function otherCatId() {
     var c = catById('other');
-    return c ? 'other' : (state.categories[0] ? state.categories[0].id : 'other');
+    if (c) return c.id;
+    /* Cloud categories use UUID ids, so also look for the category by name. */
+    for (var i = 0; i < state.categories.length; i++) {
+      if (String(state.categories[i].name || '').toLowerCase() === 'other') return state.categories[i].id;
+    }
+    return state.categories[0] ? state.categories[0].id : 'other';
   }
   /* longest keyword wins, so "dish soap" beats "soap" */
   function guessCategory(name) {
@@ -352,7 +378,29 @@
     return { n: 1, u: 'pc' };
   }
 
+  function readUiState() {
+    try {
+      return JSON.parse(localStorage.getItem(UI_KEY) || '{}') || {};
+    } catch (e) { return {}; }
+  }
+
+  function saveUiState() {
+    try {
+      localStorage.setItem(UI_KEY, JSON.stringify({
+        activeListId: state.activeListId,
+        route: state.route,
+        spendingRange: state.spendingRange
+      }));
+    } catch (e) { /* storage may be unavailable */ }
+  }
+
   function save() {
+    /* Signed-in users are persisted in Supabase. Only keep a little UI
+       preference locally so a refresh can reopen the same list. */
+    if (cloud.active) {
+      saveUiState();
+      return;
+    }
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
         signedIn: state.signedIn,
@@ -412,7 +460,614 @@
 
   function resetDemo() {
     localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(UI_KEY);
     location.reload();
+  }
+
+  /* ======================================================================
+     SUPABASE DATA STORE
+     ----------------------------------------------------------------------
+     Signed-in accounts read and write the shared workspace in Supabase:
+       To Buy / Pantry  -> public.items (done = false / true)
+       Inventory        -> public.pantry
+       Lists            -> public.lists
+       Categories       -> public.categories
+     localStorage is only used in demo mode, or as a one-time import source.
+     ====================================================================== */
+  function cloudMode() { return !!(cloud.active && S.client); }
+
+  function cloudData(res, label) {
+    if (!res || res.error) {
+      var err = (res && res.error) || new Error('Could not load ' + (label || 'data'));
+      throw err;
+    }
+    return res.data || [];
+  }
+
+  function cloudError(prefix, err) {
+    console.error(prefix, err);
+    var detail = err && (err.message || err.error_description || err.details || err.hint);
+    toast(prefix + (detail ? ' — ' + detail : ''));
+  }
+
+  function cloudListVisual(kind) {
+    if (kind === 'tasks') return { icon: 'tasks', tint: 'gold' };
+    if (kind === 'event') return { icon: 'cake', tint: 'blue' };
+    if (kind === 'inventory') return { icon: 'box', tint: 'navy' };
+    return { icon: 'cart', tint: 'green' };
+  }
+
+  function mapCloudCategory(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      tone: row.tone || 'grey',
+      custom: !!row.is_custom,
+      keywords: row.keywords || [],
+      sort_order: Number(row.sort_order) || 0
+    };
+  }
+
+  function mapCloudItem(row) {
+    var cat = row.category_id || otherCatId();
+    return {
+      id: row.id,
+      name: row.name,
+      qty: { n: Number(row.qty_amount) || 1, u: row.qty_unit || 'pcs' },
+      cat: cat,
+      aisle: catName(cat),
+      owner: row.assigned_to === cloud.userId ? 'me' : (row.assigned_to || 'me'),
+      done: !!row.done,
+      boughtAt: row.bought_at || null,
+      pantryAdded: null
+    };
+  }
+
+  function mapCloudPantry(row) {
+    var cat = row.category_id || guessCategory(row.name);
+    return {
+      id: row.id,
+      name: row.name,
+      qty: { n: Number(row.qty_amount) || 1, u: row.qty_unit || 'pcs' },
+      cat: cat,
+      expiry: row.expiry || 'On the shelf',
+      level: row.level || 'full'
+    };
+  }
+
+  function mapCloudList(row, items) {
+    var visual = cloudListVisual(row.kind);
+    return {
+      id: row.id,
+      name: row.name,
+      kind: row.kind || 'grocery',
+      icon: visual.icon,
+      tint: visual.tint,
+      shared: row.is_shared !== false,
+      items: items || []
+    };
+  }
+
+  function capRole(role) {
+    var r = String(role || 'viewer').toLowerCase();
+    return r.charAt(0).toUpperCase() + r.slice(1);
+  }
+
+  function mapCloudMembers(rows, profiles, user) {
+    var byId = {};
+    (profiles || []).forEach(function (p) { byId[p.id] = p; });
+    var list = (rows || []).map(function (m) {
+      var p = byId[m.user_id] || {};
+      var isYou = m.user_id === user.id;
+      var name = prettyName(p.full_name || p.username || (isYou ? user.email : 'Member'));
+      return {
+        id: isYou ? 'me' : m.user_id,
+        name: name,
+        email: isYou ? (user.email || '') : '',
+        initials: initialsOf(name),
+        role: capRole(m.role),
+        online: !!m.online,
+        you: isYou
+      };
+    });
+    if (!list.some(function (m) { return m.you; })) {
+      var name = prettyName(user.email || 'You');
+      list.unshift({
+        id: 'me',
+        name: name,
+        email: user.email || '',
+        initials: initialsOf(name),
+        role: 'Owner',
+        online: true,
+        you: true
+      });
+    }
+    return list;
+  }
+
+  function ensureCloudWorkspace(user) {
+    return S.client.rpc('ensure_user_workspace').then(function (r) {
+      if (r.error) throw r.error;
+      var wsId = r.data;
+      if (!wsId) throw new Error('No workspace returned');
+      return S.client.from('workspaces').select('*').eq('id', wsId).single().then(function (wr) {
+        if (wr.error) throw wr.error;
+        return wr.data;
+      });
+    }).catch(function (rpcError) {
+      /* If the RPC has not been deployed yet, fall back to an existing
+         membership. This keeps older databases usable until schema.sql is run. */
+      return S.client.from('workspace_members')
+        .select('workspace_id, workspaces(*)')
+        .eq('user_id', user.id)
+        .limit(1)
+        .then(function (r) {
+          if (r.error) throw rpcError;
+          var row = (r.data || [])[0];
+          if (!row || !row.workspaces) throw rpcError;
+          return row.workspaces;
+        });
+    });
+  }
+
+  function fetchCloudSnapshot(user) {
+    return ensureCloudWorkspace(user).then(function (workspace) {
+      cloud.workspace = workspace;
+      cloud.workspaceId = workspace.id;
+      return Promise.all([
+        S.client.from('categories').select('*').eq('workspace_id', workspace.id).order('sort_order', { ascending: true }),
+        S.client.from('lists').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: true }),
+        S.client.from('pantry').select('*').eq('workspace_id', workspace.id).order('name', { ascending: true }),
+        S.client.from('workspace_members').select('user_id, role, online, joined_at').eq('workspace_id', workspace.id)
+      ]).then(function (res) {
+        var categories = cloudData(res[0], 'categories');
+        var lists = cloudData(res[1], 'lists');
+        var pantry = cloudData(res[2], 'pantry');
+        var members = cloudData(res[3], 'members');
+
+        /* An account should always have somewhere to put an item. */
+        var listsPromise = lists.length
+          ? Promise.resolve(lists)
+          : S.client.from('lists')
+              .insert({ workspace_id: workspace.id, name: 'The weekly shop', kind: 'grocery' })
+              .select('*').single()
+              .then(function (lr) {
+                if (lr.error) throw lr.error;
+                return [lr.data];
+              });
+
+        return listsPromise.then(function (finalLists) {
+          var listIds = finalLists.map(function (l) { return l.id; });
+          var itemsPromise = listIds.length
+            ? S.client.from('items').select('*').in('list_id', listIds).order('created_at', { ascending: true })
+            : Promise.resolve({ data: [], error: null });
+
+          return itemsPromise.then(function (ir) {
+            var items = cloudData(ir, 'items');
+            var memberIds = members.map(function (m) { return m.user_id; });
+            var profilesPromise = memberIds.length
+              ? S.client.from('profiles').select('id, username, full_name, avatar').in('id', memberIds)
+              : Promise.resolve({ data: [], error: null });
+
+            return profilesPromise.then(function (pr) {
+              return {
+                workspace: workspace,
+                categories: categories,
+                lists: finalLists,
+                pantry: pantry,
+                items: items,
+                members: members,
+                profiles: cloudData(pr, 'profiles')
+              };
+            });
+          });
+        });
+      });
+    });
+  }
+
+  function applyCloudSnapshot(snapshot) {
+    state.categories = snapshot.categories.length
+      ? snapshot.categories.map(mapCloudCategory)
+      : JSON.parse(JSON.stringify(D.categories));
+
+    state.inventory = snapshot.pantry.map(mapCloudPantry);
+    state.members = mapCloudMembers(snapshot.members, snapshot.profiles, state.user);
+
+    var memberCount = state.members.length;
+    state.workspaces = [{
+      id: snapshot.workspace.id,
+      name: snapshot.workspace.name,
+      sub: memberCount + ' member' + (memberCount === 1 ? '' : 's') + " · You're the owner",
+      icon: snapshot.workspace.kind === 'friend_group' ? 'friends' : 'house',
+      active: true
+    }];
+
+    var byList = {};
+    snapshot.items.forEach(function (row) {
+      if (!byList[row.list_id]) byList[row.list_id] = [];
+      byList[row.list_id].push(mapCloudItem(row));
+    });
+    state.lists = snapshot.lists.map(function (row) {
+      return mapCloudList(row, byList[row.id] || []);
+    });
+
+    ensureStarterState();
+    var ui = readUiState();
+    if (ui.activeListId) {
+      for (var i = 0; i < state.lists.length; i++) {
+        if (state.lists[i].id === ui.activeListId) { state.activeListId = ui.activeListId; break; }
+      }
+    }
+
+    cloud.workspace = snapshot.workspace;
+    cloud.workspaceId = snapshot.workspace.id;
+    cloud.active = true;
+    cloud.ready = true;
+
+    /* Cloud data is authoritative. Remove the old prototype blob so a stale
+       To Buy / Pantry copy is never left behind in this browser. */
+    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+  }
+
+  function localCategoryName(cat) {
+    var c = catById(cat);
+    if (c) return c.name;
+    for (var i = 0; i < D.categories.length; i++) {
+      if (D.categories[i].id === cat) return D.categories[i].name;
+    }
+    return '';
+  }
+
+  function mappedCategoryId(cat, byName) {
+    if (isUuid(cat) && catById(cat)) return cat;
+    var name = localCategoryName(cat);
+    if (name && byName[name.toLowerCase()]) return byName[name.toLowerCase()];
+    return byName.other || null;
+  }
+
+  /* Normal writes use the UUIDs already in state.categories. This also handles
+     old slug ids left in a browser save. */
+  function categoryIdFor(cat) {
+    var byName = {};
+    state.categories.forEach(function (c) { byName[String(c.name || '').toLowerCase()] = c.id; });
+    return mappedCategoryId(cat, byName);
+  }
+
+  function markMigrated(userId) {
+    try { localStorage.setItem(MIGRATE_KEY + userId, '1'); } catch (e) { /* ignore */ }
+  }
+
+  function alreadyMigrated(userId) {
+    try { return localStorage.getItem(MIGRATE_KEY + userId) === '1'; } catch (e) { return false; }
+  }
+
+  /* One-time import of the old localStorage prototype data. It only runs when
+     the cloud workspace is still empty, so it can never overwrite real data. */
+  function maybeMigrateLocal(user, snapshot) {
+    if (alreadyMigrated(user.id)) return Promise.resolve(false);
+
+    var localItems = [];
+    state.lists.forEach(function (l) {
+      (l.items || []).forEach(function (it) { localItems.push({ list: l, item: it }); });
+    });
+    var localPantry = state.inventory.slice();
+
+    if (!localItems.length && !localPantry.length) {
+      markMigrated(user.id);
+      return Promise.resolve(false);
+    }
+    if (snapshot.items.length || snapshot.pantry.length) {
+      markMigrated(user.id);
+      return Promise.resolve(false);
+    }
+
+    var byName = {};
+    snapshot.categories.forEach(function (c) { byName[String(c.name || '').toLowerCase()] = c.id; });
+
+    var chain = Promise.resolve();
+    state.categories.forEach(function (c) {
+      if (byName[String(c.name || '').toLowerCase()]) return;
+      chain = chain.then(function () {
+        return S.client.from('categories').insert({
+          workspace_id: snapshot.workspace.id,
+          name: c.name,
+          tone: c.tone || 'grey',
+          keywords: c.keywords || [],
+          is_custom: true,
+          sort_order: 100
+        }).select('*').single().then(function (r) {
+          if (r.error) throw r.error;
+          byName[String(r.data.name || '').toLowerCase()] = r.data.id;
+        });
+      });
+    });
+
+    var emptyCloudLists = snapshot.lists.filter(function (l) {
+      return !snapshot.items.some(function (it) { return it.list_id === l.id; });
+    });
+
+    return chain.then(function () {
+      var plans = [];
+      var used = {};
+      state.lists.forEach(function (localList, index) {
+        var target = null;
+        if (index === 0 && emptyCloudLists.length && !used[emptyCloudLists[0].id]) {
+          target = emptyCloudLists[0];
+          used[target.id] = true;
+        }
+        plans.push({ local: localList, cloud: target });
+      });
+
+      var listChain = Promise.resolve();
+      plans.forEach(function (plan) {
+        listChain = listChain.then(function () {
+          if (plan.cloud) {
+            return S.client.from('lists').update({
+              name: plan.local.name,
+              kind: plan.local.kind || 'grocery'
+            }).eq('id', plan.cloud.id).select('*').single().then(function (r) {
+              if (r.error) throw r.error;
+              plan.cloud = r.data;
+            });
+          }
+          return S.client.from('lists').insert({
+            workspace_id: snapshot.workspace.id,
+            name: plan.local.name,
+            kind: plan.local.kind || 'grocery'
+          }).select('*').single().then(function (r) {
+            if (r.error) throw r.error;
+            plan.cloud = r.data;
+          });
+        });
+      });
+
+      return listChain.then(function () {
+        var itemChain = Promise.resolve();
+        plans.forEach(function (plan) {
+          (plan.local.items || []).forEach(function (item) {
+            itemChain = itemChain.then(function () {
+              return S.client.from('items').insert({
+                list_id: plan.cloud.id,
+                name: item.name,
+                category_id: mappedCategoryId(item.cat, byName),
+                qty_amount: item.qty.n,
+                qty_unit: item.qty.u,
+                done: !!item.done,
+                assigned_to: user.id
+              });
+            }).then(function (r) {
+              if (r.error) throw r.error;
+            });
+          });
+        });
+
+        return itemChain.then(function () {
+          var pantryChain = Promise.resolve();
+          localPantry.forEach(function (p) {
+            pantryChain = pantryChain.then(function () {
+              return S.client.from('pantry')
+                .select('id, qty_amount, qty_unit')
+                .eq('workspace_id', snapshot.workspace.id)
+                .ilike('name', p.name)
+                .limit(1)
+                .then(function (r) {
+                  if (r.error) throw r.error;
+                  var existing = (r.data || [])[0];
+                  var payload = {
+                    workspace_id: snapshot.workspace.id,
+                    name: p.name,
+                    category_id: mappedCategoryId(p.cat, byName),
+                    qty_amount: p.qty.n,
+                    qty_unit: p.qty.u,
+                    expiry: p.expiry || 'On the shelf',
+                    level: p.level || 'full'
+                  };
+                  if (existing) {
+                    return S.client.from('pantry').update(payload).eq('id', existing.id);
+                  }
+                  return S.client.from('pantry').insert(payload);
+                });
+            }).then(function (r) {
+              if (r.error) throw r.error;
+            });
+          });
+
+          return pantryChain.then(function () {
+            markMigrated(user.id);
+            try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+            toast('Your local lists were copied to your account.');
+            return true;
+          });
+        });
+      });
+    }).catch(function (err) {
+      console.warn('Local data migration skipped', err);
+      return false;
+    });
+  }
+
+  function hydrateCloud(user) {
+    cloud.active = true;
+    cloud.loading = true;
+    cloud.userId = user.id;
+    cloud.ready = false;
+
+    return fetchCloudSnapshot(user).then(function (snapshot) {
+      return maybeMigrateLocal(user, snapshot).then(function (migrated) {
+        return migrated ? fetchCloudSnapshot(user) : snapshot;
+      });
+    }).then(function (snapshot) {
+      applyCloudSnapshot(snapshot);
+      cloud.loading = false;
+      return snapshot;
+    }).catch(function (err) {
+      cloud.loading = false;
+      cloud.active = false;
+      cloud.ready = false;
+      throw err;
+    });
+  }
+
+  function cloudInsertItem(listId, item) {
+    return S.client.from('items').insert({
+      list_id: listId,
+      name: item.name,
+      category_id: categoryIdFor(item.cat),
+      qty_amount: item.qty.n,
+      qty_unit: item.qty.u,
+      done: !!item.done,
+      assigned_to: cloud.userId
+    }).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudItem(r.data);
+    });
+  }
+
+  function cloudUpdateItem(item) {
+    return S.client.from('items').update({
+      name: item.name,
+      category_id: categoryIdFor(item.cat),
+      qty_amount: item.qty.n,
+      qty_unit: item.qty.u
+    }).eq('id', item.id).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudItem(r.data);
+    });
+  }
+
+  function cloudToggleItem(item, done) {
+    return S.client.from('items').update({ done: done }).eq('id', item.id).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudItem(r.data);
+    });
+  }
+
+  function cloudDeleteItem(item) {
+    return S.client.from('items').delete().eq('id', item.id).then(function (r) {
+      if (r.error) throw r.error;
+      return true;
+    });
+  }
+
+  function cloudRefreshPantry() {
+    if (!cloud.active) return Promise.resolve();
+    return S.client.from('pantry')
+      .select('*')
+      .eq('workspace_id', cloud.workspaceId)
+      .order('name', { ascending: true })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.inventory = (r.data || []).map(mapCloudPantry);
+      });
+  }
+
+  function cloudInsertList(name, kind) {
+    return S.client.from('lists').insert({
+      workspace_id: cloud.workspaceId,
+      name: name,
+      kind: kind || 'grocery'
+    }).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudList(r.data, []);
+    });
+  }
+
+  function cloudInsertCategory(cat) {
+    var maxOrder = 0;
+    state.categories.forEach(function (c) { maxOrder = Math.max(maxOrder, Number(c.sort_order) || 0); });
+    return S.client.from('categories').insert({
+      workspace_id: cloud.workspaceId,
+      name: cat.name,
+      tone: cat.tone || 'green',
+      keywords: cat.keywords || [],
+      is_custom: true,
+      sort_order: maxOrder + 1
+    }).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudCategory(r.data);
+    });
+  }
+
+  function cloudUpdateCategory(cat) {
+    return S.client.from('categories').update({
+      name: cat.name,
+      tone: cat.tone || 'grey',
+      keywords: cat.keywords || []
+    }).eq('id', cat.id).then(function (r) {
+      if (r.error) throw r.error;
+      return true;
+    });
+  }
+
+  function cloudDeleteCategory(id, fallbackId) {
+    var chain = Promise.resolve();
+    if (fallbackId) {
+      chain = chain
+        .then(function () { return S.client.from('items').update({ category_id: fallbackId }).eq('category_id', id); })
+        .then(function (r) { if (r.error) throw r.error; })
+        .then(function () { return S.client.from('pantry').update({ category_id: fallbackId }).eq('category_id', id); })
+        .then(function (r) { if (r.error) throw r.error; });
+    }
+    return chain.then(function () {
+      return S.client.from('categories').delete().eq('id', id);
+    }).then(function (r) {
+      if (r.error) throw r.error;
+      return true;
+    });
+  }
+
+  function cloudAddPantry(entry) {
+    return S.client.from('pantry')
+      .select('id, qty_amount, qty_unit')
+      .eq('workspace_id', cloud.workspaceId)
+      .ilike('name', entry.name)
+      .limit(1)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var existing = (r.data || [])[0];
+        var qty = { n: entry.qty.n, u: entry.qty.u };
+        if (existing && existing.qty_unit === entry.qty.u) {
+          qty.n = Number(existing.qty_amount) + entry.qty.n;
+        }
+        var payload = {
+          workspace_id: cloud.workspaceId,
+          name: entry.name,
+          category_id: categoryIdFor(entry.cat),
+          qty_amount: qty.n,
+          qty_unit: qty.u,
+          expiry: entry.expiry || 'On the shelf',
+          level: entry.level || 'full'
+        };
+        if (existing) {
+          return S.client.from('pantry').update(payload).eq('id', existing.id).select('*').single();
+        }
+        return S.client.from('pantry').insert(payload).select('*').single();
+      }).then(function (r) {
+        if (r.error) throw r.error;
+        return mapCloudPantry(r.data);
+      });
+  }
+
+  function cloudUpdatePantry(entry) {
+    return S.client.from('pantry').update({
+      name: entry.name,
+      category_id: categoryIdFor(entry.cat),
+      qty_amount: entry.qty.n,
+      qty_unit: entry.qty.u,
+      expiry: entry.expiry || 'On the shelf',
+      level: entry.level || 'full'
+    }).eq('id', entry.id).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudPantry(r.data);
+    });
+  }
+
+  function cloudDeletePantry(entry) {
+    return S.client.from('pantry').delete().eq('id', entry.id).then(function (r) {
+      if (r.error) throw r.error;
+      return true;
+    });
   }
 
   /* ----------------------------------------------------------------- toast */
@@ -806,7 +1461,7 @@
         '<span class="inv-name">' + esc(p.name) + '</span>' +
         '<span class="inv-qty">' + esc(qtyText(p.qty)) + '</span>' +
         '<span class="inv-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry || 'On the shelf') + '</span>' +
-        '<button class="inv-add" data-pantry="' + esc(p.name) + '" data-pantry-cat="' + esc(p.cat || '') + '" data-pantry-n="' + p.qty.n + '" data-pantry-u="' + esc(p.qty.u) + '">' + icon('plus') + ' Add to list</button>' +
+        '<button class="inv-add" data-pantry="' + esc(p.name) + '" data-pantry-cat="' + esc(p.cat || '') + '" data-pantry-n="' + p.qty.n + '" data-pantry-u="' + esc(p.qty.u) + '" aria-label="Add ' + esc(p.name) + ' to the list">' + icon('plus') + ' Add to list</button>' +
       '</div>';
     }).join('');
   }
@@ -1139,7 +1794,7 @@
       return '<div class="pantry-row">' +
         '<span class="pantry-ico">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
         '<div class="p-name">' + esc(p.name) + '</div>' +
-        '<div class="p-qty">' + esc(p.qty) + '</div>' +
+        '<div class="p-qty">' + esc(qtyText(p.qty)) + '</div>' +
         '<div class="p-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry) + '</div>' +
         (p.level === 'low'
           ? '<button class="p-add" data-pantry="' + esc(p.name) + '">' + icon('plus') + ' Add to list</button>'
@@ -1344,12 +1999,28 @@
     var kws = (kwEl.value || '').split(',').map(function (k) { return k.trim().toLowerCase(); })
       .filter(function (k) { return k.length > 1; });
     var toneEl = $('#tone-picker .is-active');
-    state.categories.push({ id: id, name: name, tone: toneEl ? toneEl.dataset.tone : 'green', custom: true, keywords: kws });
+    var category = { id: id, name: name, tone: toneEl ? toneEl.dataset.tone : 'green', custom: true, keywords: kws };
+    state.categories.push(category);
 
     save();
     renderCategoriesPanel();
     render();
     toast('Category “' + name + '” created');
+
+    if (cloudMode()) {
+      cloudInsertCategory(category).then(function (saved) {
+        var index = state.categories.indexOf(category);
+        if (index !== -1) state.categories[index] = saved;
+        if (state.addCategory === id) state.addCategory = saved.id;
+        renderCategoriesPanel();
+        render();
+      }).catch(function (err) {
+        state.categories = state.categories.filter(function (x) { return x !== category; });
+        renderCategoriesPanel();
+        render();
+        cloudError('Could not create that category', err);
+      });
+    }
   }
 
   function renameCategory(id, name) {
@@ -1360,6 +2031,9 @@
     c.name = clean;
     save();
     render();
+    if (cloudMode()) {
+      cloudUpdateCategory(c).catch(function (err) { cloudError('Could not rename that category', err); });
+    }
   }
 
   function deleteCategory(id) {
@@ -1371,11 +2045,18 @@
     state.lists.forEach(function (l) {
       l.items.forEach(function (it) { if (it.cat === id) it.cat = fallback; });
     });
+    state.inventory.forEach(function (p) { if (p.cat === id) p.cat = fallback; });
     if (state.addCategory === id) state.addCategory = 'auto';
     save();
     renderCategoriesPanel();
     render();
     toast('Category “' + c.name + '” deleted — its items moved to ' + catName(fallback));
+
+    if (cloudMode()) {
+      cloudDeleteCategory(id, fallback).catch(function (err) {
+        cloudError('Could not delete that category', err);
+      });
+    }
   }
 
   function addKeyword(catId, kw) {
@@ -1386,6 +2067,9 @@
     c.keywords = c.keywords || [];
     if (c.keywords.indexOf(k) === -1) c.keywords.push(k);
     save();
+    if (cloudMode()) {
+      cloudUpdateCategory(c).catch(function (err) { cloudError('Could not save that keyword', err); });
+    }
   }
 
   function removeKeyword(catId, kw) {
@@ -1393,6 +2077,9 @@
     if (!c) return;
     c.keywords = (c.keywords || []).filter(function (k) { return k !== kw; });
     save();
+    if (cloudMode()) {
+      cloudUpdateCategory(c).catch(function (err) { cloudError('Could not save that keyword', err); });
+    }
   }
 
   /* =============================== RENDERER =============================== */
@@ -1551,7 +2238,7 @@
   /* push an item onto the active list (no validation — callers do that) */
   function pushItem(name, qty, cat) {
     var list = activeList();
-    list.items.push({
+    var item = {
       id: 'n' + Date.now() + Math.floor(Math.random() * 100),
       name: tidyName(name),
       qty: qty,
@@ -1559,8 +2246,23 @@
       aisle: catName(cat),
       owner: (state.members.filter(function (m) { return m.you; })[0] || state.members[0]).id,
       done: false
-    });
-    save();
+    };
+    list.items.push(item);
+
+    if (cloudMode()) {
+      cloudInsertItem(list.id, item).then(function (saved) {
+        var index = list.items.indexOf(item);
+        if (index !== -1) list.items[index] = saved;
+        render();
+      }).catch(function (err) {
+        list.items = list.items.filter(function (it) { return it !== item; });
+        render();
+        cloudError('Could not add that item', err);
+      });
+    } else {
+      save();
+    }
+    return item;
   }
 
   /* step 2 -> actually put it on the list */
@@ -1641,18 +2343,29 @@
     clearEditError();
 
     var list = activeList();
+    var edited = null;
     list.items.forEach(function (it) {
       if (it.id === id) {
         it.name = name;
         it.qty = { n: v.n, u: unit };
         it.cat = catEl.value;
         it.aisle = catName(catEl.value);
+        edited = it;
       }
     });
     state.editingId = null;
     save();
     render();
     toast('Item updated');
+
+    if (cloudMode() && edited) {
+      cloudUpdateItem(edited).then(function (saved) {
+        list.items = list.items.map(function (it) { return it.id === saved.id ? saved : it; });
+        render();
+      }).catch(function (err) {
+        cloudError('Could not save that edit', err);
+      });
+    }
   }
 
   function invite() {
@@ -1671,29 +2384,115 @@
     toast('Invite sent to ' + email);
   }
 
+  function newPantryItem() {
+    var rawName = prompt('What did you add to the pantry?', '');
+    if (rawName === null) return;
+    var name = tidyName(String(rawName).trim());
+    if (!name) return;
+
+    var rawQty = prompt('How much? For example: 2 pcs, 1 kg, 500 ml', '1 pcs');
+    if (rawQty === null) return;
+    var qty = parseQty(rawQty);
+    var cat = guessCategory(name);
+    var entry = {
+      id: 'inv' + Date.now(),
+      name: name,
+      qty: qty,
+      cat: cat,
+      expiry: 'On the shelf',
+      level: 'full'
+    };
+
+    state.inventory.push(entry);
+    save();
+    render();
+    toast('“' + name + '” added to the pantry');
+
+    if (cloudMode()) {
+      cloudAddPantry(entry).then(function (saved) {
+        var index = state.inventory.indexOf(entry);
+        if (index !== -1) state.inventory[index] = saved;
+        render();
+      }).catch(function (err) {
+        state.inventory = state.inventory.filter(function (p) { return p !== entry; });
+        render();
+        cloudError('Could not save that pantry item', err);
+      });
+    }
+  }
+
   function newList() {
     var name = prompt('Name your new list', 'New list');
-    if (!name) return;
-    state.lists.push({
+    if (!name || !name.trim()) return;
+    var clean = name.trim();
+    var list = {
       id: 'l' + Date.now(),
-      name: name.trim(),
+      name: clean,
       kind: 'grocery',
       icon: 'cart',
       tint: 'green',
       shared: true,
       aisle: 'Other',
       items: []
-    });
+    };
+    state.lists.push(list);
+    state.activeListId = list.id;
     save();
     render();
-    toast('List “' + name.trim() + '” created');
+    toast('List “' + clean + '” created');
+
+    if (cloudMode()) {
+      cloudInsertList(clean, 'grocery').then(function (saved) {
+        var index = state.lists.indexOf(list);
+        if (index !== -1) state.lists[index] = saved;
+        if (state.activeListId === list.id) state.activeListId = saved.id;
+        save();
+        render();
+      }).catch(function (err) {
+        state.lists = state.lists.filter(function (l) { return l !== list; });
+        if (state.activeListId === list.id) ensureStarterState();
+        render();
+        cloudError('Could not create that list', err);
+      });
+    }
+  }
+
+  function resetLocalState() {
+    state.lists = [];
+    state.inventory = [];
+    state.categories = JSON.parse(JSON.stringify(D.categories));
+    state.members = [];
+    state.workspaces = [];
+    state.pending = [];
+    state.activeListId = null;
+    state.lifeAdmin = JSON.parse(JSON.stringify(D.lifeAdmin));
+    state.events = JSON.parse(JSON.stringify(D.events));
+    state.activity = JSON.parse(JSON.stringify(D.activity));
   }
 
   function signOut() {
+    var wasCloud = cloud.active;
+    cloud.active = false;
+    cloud.ready = false;
+    cloud.loading = false;
+    cloud.userId = null;
+    cloud.workspaceId = null;
+    cloud.workspace = null;
+
     state.signedIn = false;
     auth.user = null;
     setOAuthPending(false);
-    save();
+    hideAppLoading();
+
+    if (wasCloud) {
+      /* Never leave one account's cloud data visible in another account's
+         browser storage. It will be fetched fresh from Supabase next time. */
+      try { localStorage.removeItem(STORE_KEY); localStorage.removeItem(UI_KEY); } catch (e) { /* ignore */ }
+      resetLocalState();
+    } else {
+      save();
+    }
+
     closeDrawer();
     if (S.client) {
       /* clear the Supabase session too, so a refresh cannot sign you back in */
@@ -1725,6 +2524,17 @@
     $('#view-login').classList.add('hidden');
     $('#view-app').classList.remove('hidden');
     render();
+  }
+  function showAppLoading(message) {
+    var el = $('#app-loading');
+    if (!el) return;
+    var text = $('#app-loading-text');
+    if (text && message) text.textContent = message;
+    el.classList.remove('hidden');
+  }
+  function hideAppLoading() {
+    var el = $('#app-loading');
+    if (el) el.classList.add('hidden');
   }
 
   /* ------------------------------------------------------ auth screen UI */
@@ -2200,12 +3010,12 @@
     });
   }
 
-  function onSignedIn(user, opts) {
+  function enterApp(user, opts) {
     opts = opts || {};
 
-    /* both getSession() and the auth listener can report the same sign-in;
-       only the first one should move the screen and show the toast */
-    if (state.signedIn && $('#view-app') && !$('#view-app').classList.contains('hidden')) {
+    /* getSession() and the auth listener can both report the same sign-in.
+       Only the first call should start hydration and show the toast. */
+    if (state.signedIn && (cloud.loading || ($('#view-app') && !$('#view-app').classList.contains('hidden')))) {
       auth.user = user || auth.user;
       setOAuthPending(false);
       return;
@@ -2215,26 +3025,49 @@
     state.signedIn = true;
     setOAuthPending(false);
     applyUser(user);
+
+    var hash = (window.location.hash || '').replace('#/', '');
+    state.route = opts.route || (['dashboard', 'lists', 'spending'].indexOf(hash) !== -1 ? hash : 'dashboard');
+    try { window.history.replaceState(null, '', '#/' + state.route); } catch (e) { /* ignore */ }
+
+    if (S.client && user) {
+      showAppLoading('Loading your saved lists…');
+      hydrateCloud(user).then(function () {
+        hideAppLoading();
+        showApp();
+        var first = you().name.split(' ')[0];
+        toast(opts.google ? 'Signed in with Google — welcome, ' + first + '!' : 'Welcome back, ' + first + '!');
+      }).catch(function (err) {
+        hideAppLoading();
+        cloudError('Could not load your saved lists', err);
+        showApp();
+      });
+      return;
+    }
+
     save();
-
-    /* every successful sign-in lands on the dashboard (the home screen) */
-    state.route = 'dashboard';
-    try { window.history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
-
     showApp();
     var first = you().name.split(' ')[0];
     toast(opts.google ? 'Signed in with Google — welcome, ' + first + '!' : 'Welcome, ' + first + '!');
   }
 
+  function onSignedIn(user, opts) {
+    opts = opts || {};
+
+    /* both getSession() and the auth listener can report the same sign-in;
+       only the first one should move the screen and show the toast */
+    if (state.signedIn && (cloud.loading || ($('#view-app') && !$('#view-app').classList.contains('hidden')))) {
+      auth.user = user || auth.user;
+      setOAuthPending(false);
+      return;
+    }
+
+    enterApp(user, opts);
+  }
+
   /* demo mode: no backend, everything stays in the browser */
   function signInDemo() {
-    state.signedIn = true;
-    applyUser(null);
-    save();
-    state.route = 'dashboard';
-    try { window.history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
-    showApp();
-    toast('Signed in (demo mode)');
+    enterApp(null, { demo: true });
   }
 
   function submitAuth(e) {
@@ -2614,14 +3447,38 @@
         var row = el.closest('.item-row');
         var list = activeList();
         var msg = null;
+        var changed = null;
         list.items.forEach(function (it) {
           if (it.id !== row.dataset.id) return;
           it.done = !it.done;
-          if (it.done) msg = addToInventory(it);
-          else { removeFromInventory(it); msg = it.name + ' moved back to To Buy'; }
+          changed = it;
+          if (cloudMode()) {
+            /* Supabase keeps the pantry in sync with a trigger. */
+            msg = it.name + (it.done ? ' moved to the pantry' : ' moved back to To Buy');
+          } else if (it.done) {
+            msg = addToInventory(it);
+          } else {
+            removeFromInventory(it);
+            msg = it.name + ' moved back to To Buy';
+          }
         });
         save(); render();
         if (msg) toast(msg);
+
+        if (cloudMode() && changed) {
+          var nextDone = changed.done;
+          cloudToggleItem(changed, nextDone).then(function (saved) {
+            list.items = list.items.map(function (it) { return it.id === saved.id ? saved : it; });
+            return cloudRefreshPantry().then(render).catch(function (err) {
+              render();
+              cloudError('Item saved, but the pantry could not refresh', err);
+            });
+          }).catch(function (err) {
+            changed.done = !nextDone;
+            render();
+            cloudError('Could not update that item', err);
+          });
+        }
         break;
       }
       case 'del': {
@@ -2631,6 +3488,19 @@
         l2.items = l2.items.filter(function (i) { return i.id !== r2.dataset.id; });
         save(); render();
         if (removed) toast('Removed “' + removed.name + '”');
+
+        if (cloudMode() && removed) {
+          cloudDeleteItem(removed).then(function () {
+            return cloudRefreshPantry().then(render).catch(function (err) {
+              render();
+              cloudError('Item removed, but the pantry could not refresh', err);
+            });
+          }).catch(function (err) {
+            l2.items.push(removed);
+            render();
+            cloudError('Could not remove that item', err);
+          });
+        }
         break;
       }
       case 'toggle-life': {
@@ -2680,7 +3550,7 @@
       case 'add-named': openAddModal(el.dataset.name || ''); break;
       case 'clear-search': state.listQuery = ''; render(); break;
       case 'new-list': newList(); break;
-      case 'new-pantry': toast('Pantry capture is part of the next build'); break;
+      case 'new-pantry': newPantryItem(); break;
       case 'new-event': toast('Event editor is part of the next build'); break;
       case 'share': toast('Share link copied to clipboard'); break;
       case 'export': toast('Spending report exported as CSV'); break;
@@ -2777,6 +3647,10 @@
 
     var reset = e.target.closest('[data-act="reset-categories"]');
     if (reset) {
+      if (cloudMode()) {
+        toast('Categories are shared with your household — rename or remove them instead.');
+        return;
+      }
       state.categories = JSON.parse(JSON.stringify(D.categories));
       state.addCategory = 'auto';
       save(); renderCategoriesPanel(); render();
@@ -2867,7 +3741,7 @@
 
       S.client.auth.getSession().then(function (r) {
         var session = r && r.data ? r.data.session : null;
-        var user = r && r.data ? r.data.user : null;
+        var user = session ? session.user : null;
 
         if (oauth.failed) {
           /* belt and braces: a cancelled prompt must not revive an old session */
@@ -2879,16 +3753,9 @@
         }
 
         if (session && user) {
-          if (oauth.pending) {
-            onSignedIn(user, { google: true });
-          } else {
-            auth.user = user;
-            state.signedIn = true;
-            applyUser(user);
-            var h = (window.location.hash || '').replace('#/', '');
-            if (['lists', 'spending'].indexOf(h) !== -1) state.route = h;
-            showApp();
-          }
+          var h = (window.location.hash || '').replace('#/', '');
+          var route = ['lists', 'spending'].indexOf(h) !== -1 ? h : 'dashboard';
+          enterApp(user, { google: !!oauth.pending, route: route });
           return;
         }
 
@@ -2931,7 +3798,17 @@
       }
     }
 
-    window.__bililist = { state: state, reset: resetDemo, D: D, auth: auth, supabase: S, setAuthStep: setAuthStep, applyUser: applyUser, showApp: showApp };
+    window.__bililist = {
+      state: state,
+      reset: resetDemo,
+      D: D,
+      auth: auth,
+      supabase: S,
+      setAuthStep: setAuthStep,
+      applyUser: applyUser,
+      showApp: showApp,
+      enterApp: enterApp
+    };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
