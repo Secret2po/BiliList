@@ -10,8 +10,10 @@ mode is the offline fallback.
 1. **Apply the database schema.** In Supabase open **SQL Editor**, paste the
    whole of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
    The “destructive query” warning is expected; the script drops and recreates
-   policies/triggers and is safe to run again. Without this step the app falls
-   back to local demo mode and the two devices will not share data.
+   policies/triggers and is safe to run again. **If you ran an earlier version
+   of the schema, run this updated file again** — its last section adds the five
+   tables to the `supabase_realtime` publication. Without this step the app
+   falls back to local demo mode and the two devices will not share data.
 2. **Create the demo account.** Sign in once with email/password and add a test
    item. Use the **same account** on the laptop and the phone — the workspace,
    and therefore the shared lists, belong to the account.
