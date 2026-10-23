@@ -94,9 +94,13 @@ For the 6-digit code to arrive you need an email provider:
 2. Supabase ships with a built-in SMTP that works for a few emails a day
    (fine for a demo). For real usage, add **Resend**, **Brevo** or
    **SendGrid** under **Authentication → Emails → SMTP**.
-3. Under **Authentication → URL Configuration**, set **Site URL** to
-   `http://127.0.0.1:8123` and add `http://localhost:8123` to the redirect
-   allow list. Add your real domain when you deploy.
+3. Under **Authentication → URL Configuration**, set **Site URL** to your
+   public URL (`https://secret2po.github.io/BiliList/`, see
+   [`../DEPLOY.md`](../DEPLOY.md)) and add
+   `https://secret2po.github.io/BiliList/**` to the redirect allow list. Keep
+   `http://localhost:8123/**` only if you also develop locally. A
+   `192.168.x.x` address is private to one Wi-Fi and will not work for
+   groupmates.
 4. **Add the code to the email templates.** Supabase's stock templates only
    contain a link, so the 6-digit code never appears. Go to
    **Authentication → Emails** and put `{{ .Token }}` in the body of
@@ -126,15 +130,17 @@ OAuth exchange, so the browser never touches your Google client secret.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
    application type **Web application**.
 4. Add the **Authorized JavaScript origins**:
-   - `http://127.0.0.1:8123`
-   - `http://localhost:8123`
-   - `https://your-domain.example` (when deployed)
+   - `https://xsjwhwrnseevlntxwjeg.supabase.co`
 5. Add the **Authorized redirect URI**. This is the Supabase callback, **not**
    the BiliLIST page:
 
    ```
    https://xsjwhwrnseevlntxwjeg.supabase.co/auth/v1/callback
    ```
+
+   Supabase performs the Google exchange, so the BiliLIST public URL is allowed
+   in Supabase (section 5b), not directly in Google Cloud. Local development
+   uses the same Supabase callback; no localhost origin is needed here.
 
 6. Copy the **Client ID** and **Client secret**.
 
@@ -143,9 +149,10 @@ OAuth exchange, so the browser never touches your Google client secret.
 1. **Authentication → Providers → Google** → toggle it **on**.
 2. Paste the Client ID and Client secret, then **Save**.
 3. **Authentication → URL Configuration**:
-   - **Site URL**: `http://127.0.0.1:8123`
-   - **Redirect URLs**: `http://127.0.0.1:8123/**` and
-     `http://localhost:8123/**` (plus your production URL).
+   - **Site URL**: `https://secret2po.github.io/BiliList/`
+   - **Redirect URLs**: `https://secret2po.github.io/BiliList/**`
+   - Optional, local development only: `http://localhost:8123/**` and
+     `http://127.0.0.1:8123/**`
 4. Re-run `supabase/schema.sql` (safe to repeat). It updates
    `handle_new_user()` so a Google account stores Google's `full_name`,
    `name` and `picture` / `avatar_url` in `profiles`, and still gets a starter
@@ -167,9 +174,11 @@ OAuth exchange, so the browser never touches your Google client secret.
 - `flowType: 'pkce'` is enabled in `assets/js/supabase-client.js`, so the OAuth
   code is exchanged in the browser instead of putting tokens in the URL hash.
 
-> `redirectTo` is built from the current page URL. If you open the prototype as
-> `http://127.0.0.1:8123/index.html`, that exact URL must also be present in the
-> Supabase redirect allow list.
+> `redirectTo` is built from the current page URL. The public demo URL is
+> `https://secret2po.github.io/BiliList/`, so allow
+> `https://secret2po.github.io/BiliList/**` in Supabase. If you develop locally
+> and open `http://127.0.0.1:8123/index.html`, that exact URL must also be
+> present in the redirect allow list.
 
 ---
 
