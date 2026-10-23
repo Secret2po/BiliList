@@ -26,6 +26,10 @@ There is **no build step and no dependencies to install**. Pick whichever is eas
 | **C. Phone on Wi-Fi** | Run `python serve.py 8123 0.0.0.0`, then on the phone open `http://<your-PC-ip>:8123/` (the script prints the address). |
 | **D. VS Code** | Install the *Live Server* extension, right-click `index.html` → *Open with Live Server*. |
 
+> **Presentation day:** the two-device checklist is in
+> [`PRESENTATION.md`](PRESENTATION.md). On Windows, double-click **`run.bat`**
+> to start the LAN-capable server and keep the window open.
+
 > `serve.py` is the same as `python -m http.server` except it sends `no-store`
 > headers. Plain `http.server` lets the browser cache `app.js` / `styles.css`,
 > so your edits do not show up until you hard-refresh. Use `serve.py` while
