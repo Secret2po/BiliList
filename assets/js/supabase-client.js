@@ -55,7 +55,10 @@
         auth: {
           persistSession: true,
           autoRefreshToken: true,
-          detectSessionInUrl: true
+          detectSessionInUrl: true,
+          /* PKCE is the safer OAuth exchange for a browser app: the access
+             token never rides back in the URL hash. */
+          flowType: 'pkce'
         }
       });
     } catch (e) {
@@ -91,6 +94,24 @@
     });
   }
 
+  /* is the Google provider switched on for this project?
+     null means "could not tell" — the caller then tries the normal flow. */
+  function googleEnabled() {
+    if (!global.fetch || !url || !key) return Promise.resolve(null);
+    var base = String(url).replace(/\/+$/, '');
+    return global.fetch(base + '/auth/v1/settings', {
+      headers: { apikey: key, Authorization: 'Bearer ' + key }
+    }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function (data) {
+      if (!data || !data.external) return null;
+      return !!data.external.google;
+    }).catch(function () {
+      return null;
+    });
+  }
+
   global.BiliSupabase = {
     client: client,
     isConfigured: !!client,
@@ -102,6 +123,7 @@
     initError: initError,
     saveConfig: saveConfig,
     clearConfig: clearConfig,
-    testConnection: testConnection
+    testConnection: testConnection,
+    googleEnabled: googleEnabled
   };
 })(window);

@@ -7,6 +7,7 @@
 
   var D = window.BiliList;
   var STORE_KEY = 'bililist.prototype.v2';
+  var OAUTH_PENDING_KEY = 'bililist.oauth.pending';
 
   /* ------------------------------------------------------------------ util */
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -1690,8 +1691,15 @@
 
   function signOut() {
     state.signedIn = false;
+    auth.user = null;
+    setOAuthPending(false);
     save();
     closeDrawer();
+    if (S.client) {
+      /* clear the Supabase session too, so a refresh cannot sign you back in */
+      S.client.auth.signOut().catch(function () { /* offline: local state is already cleared */ });
+    }
+    setAuthStep('signin');
     showLogin();
     toast('Signed out');
   }
@@ -1728,11 +1736,24 @@
     var isVerify = step === 'verify';
     var isNewPass = step === 'newpass';
 
-    /* the tab strip only exists for the two entry points */
-    $('#auth-tabs').hidden = isVerify || isNewPass;
-    $$('#auth-tabs .auth-tab').forEach(function (b) {
-      b.classList.toggle('is-active', b.dataset.authTab === (isSignup ? 'signup' : 'signin'));
-    });
+    /* Google and the email form share the entry point; the verification and
+       reset steps are email-only, so the divider and Google button step aside. */
+    var googleWrap = $('#google-auth');
+    if (googleWrap) googleWrap.hidden = isVerify || isNewPass;
+
+    var orLine = $('.or-line');
+    if (orLine) orLine.textContent = isSignup ? 'or sign up with email' : 'or log in with email';
+
+    /* the top-right shortcut mirrors the current step */
+    var topLabel = $('#login-top-label');
+    var topSignup = $('#link-signup-top');
+    var topSignin = $('#link-signin-top');
+    if (topLabel) {
+      topLabel.textContent = isSignin ? 'New around here?'
+        : (isSignup ? 'Already have an account?' : 'Changed your mind?');
+    }
+    if (topSignup) topSignup.hidden = !isSignin;
+    if (topSignin) topSignin.hidden = isSignin;
 
     /* which fields are on screen */
     $('#field-username').hidden = !isSignup;
@@ -1747,16 +1768,18 @@
     if (isSignin) {
       heading.textContent = 'Welcome back';
       sub.textContent = 'Your groceries, to-dos, and everyday plans. Right where you left them.';
-      btn.querySelector('span').textContent = 'Sign in';
+      btn.querySelector('span').textContent = 'Log in';
       label.textContent = 'Password';
       hint.textContent = '8 characters minimum.';
-      $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Create one</a>';
+      $('#f-pass').placeholder = 'Enter your password';
+      $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Sign up for free</a>';
     } else if (isSignup) {
       heading.textContent = 'Create your account';
       sub.textContent = 'Start a shared list with the people you live, shop or plan with.';
       btn.querySelector('span').textContent = 'Create account';
       label.textContent = 'Password';
       hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      $('#f-pass').placeholder = 'At least 8 characters';
       $('#auth-secondary').innerHTML = '<span>Already have an account?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
     } else if (isVerify) {
       heading.textContent = auth.purpose === 'recovery' ? 'Reset your password' : 'Verify your email';
@@ -1873,6 +1896,158 @@
     return window.location.origin + window.location.pathname;
   }
 
+  /* ------------------------------------------------------ Google sign-in */
+  /* We flag the moment we leave for Google, so when the browser comes back we
+     can tell "an account was chosen" apart from "the prompt was cancelled".
+     Cancel must never fall through to a saved session or demo login. */
+  function setOAuthPending(on) {
+    try {
+      if (on) sessionStorage.setItem(OAUTH_PENDING_KEY, '1');
+      else sessionStorage.removeItem(OAUTH_PENDING_KEY);
+    } catch (e) { /* private browsing: the in-memory flow still works */ }
+  }
+
+  function isOAuthPending() {
+    try { return sessionStorage.getItem(OAUTH_PENDING_KEY) === '1'; }
+    catch (e) { return false; }
+  }
+
+  /* Supabase returns OAuth failures in the hash (#error=…) or the query
+     string (?error=…). Read both before the SDK tidies the URL up. */
+  function authParamsFromUrl() {
+    var out = {};
+    function read(raw) {
+      var s = String(raw || '').replace(/^[?#]/, '');
+      if (!s || s.charAt(0) === '/') return;   /* an app route, not an auth result */
+      s.split('&').forEach(function (pair) {
+        var i = pair.indexOf('=');
+        if (i < 1) return;
+        var k, v;
+        try { k = decodeURIComponent(pair.slice(0, i).replace(/\+/g, ' ')); } catch (e) { k = pair.slice(0, i); }
+        try { v = decodeURIComponent(pair.slice(i + 1).replace(/\+/g, ' ')); } catch (e) { v = pair.slice(i + 1); }
+        out[k] = v;
+      });
+    }
+    read(window.location.hash);
+    read(window.location.search);
+    return out;
+  }
+
+  function googleErrorMessage(p) {
+    var code = String(p.error_code || p.error || '').toLowerCase();
+    var desc = String(p.error_description || p.error_message || '');
+    var low = desc.toLowerCase();
+
+    if (code === 'access_denied' || /access[_ ]denied|cancel|denied|closed/.test(low)) {
+      return 'Google sign-in was canceled. Choose a Google account to continue — you are not signed in.';
+    }
+    if (/provider is not enabled|unsupported provider|not enabled/.test(low)) {
+      return 'Google sign-in is not enabled yet. Turn it on in Supabase → Authentication → Providers → Google.';
+    }
+    if (/redirect|uri_mismatch|invalid request/.test(low)) {
+      return 'Google rejected the redirect URL. Add this page to the Supabase and Google Cloud redirect URL lists.';
+    }
+    if (/access blocked|forbidden/.test(low)) {
+      return 'Google blocked this sign-in. Check the OAuth consent screen and test-user list in Google Cloud.';
+    }
+    return 'Google sign-in failed' + (desc ? ': ' + desc : '. Please try again.');
+  }
+
+  function cleanAuthUrl() {
+    var raw = (window.location.hash || '') + '&' + (window.location.search || '');
+    if (!/error=|error_code=|error_description=/.test(raw)) return;
+    try { window.history.replaceState(null, '', window.location.pathname); }
+    catch (e) { /* older browsers: a stale error in the URL is harmless */ }
+  }
+
+  /* Called once on boot. Returns whether this page load is an OAuth return. */
+  function readOAuthReturn() {
+    var p = authParamsFromUrl();
+    var failed = !!(p.error || p.error_code);
+    var pending = isOAuthPending();
+
+    if (failed) {
+      var code = String(p.error_code || p.error || '').toLowerCase();
+      var desc = String(p.error_description || p.error_message || '');
+      var message;
+      if (pending) {
+        message = googleErrorMessage(p);
+      } else if (code === 'access_denied' || /access[_ ]denied|cancel/i.test(desc)) {
+        message = 'That sign-in was canceled. You are not signed in — please try again.';
+      } else {
+        message = 'That sign-in link is invalid or has expired. Please start over.';
+      }
+      setOAuthPending(false);
+      cleanAuthUrl();
+      return { failed: true, pending: false, message: message };
+    }
+    return { failed: false, pending: pending, message: '' };
+  }
+
+  function setGoogleBusy(busy) {
+    var btn = $('#btn-google');
+    if (!btn) return;
+    btn.disabled = !!busy;
+    btn.classList.toggle('is-busy', !!busy);
+    var label = btn.querySelector('.btn-google-label');
+    if (label) label.textContent = busy ? 'Connecting to Google…' : 'Continue with Google';
+  }
+
+  function continueWithGoogle() {
+    clearAuthErrors();
+
+    if (!S.client) {
+      authNote('Google sign-in needs a live Supabase connection. Add your supabaseUrl and publishable key in assets/js/config.js, then refresh.', 'error');
+      return;
+    }
+
+    setGoogleBusy(true);
+
+    /* One quick check against the project settings: if the provider is off we
+       can explain that instantly instead of sending the user to a dead end. */
+    var gate = (typeof S.googleEnabled === 'function') ? S.googleEnabled() : Promise.resolve(null);
+
+    gate.then(function (enabled) {
+      if (enabled === false) {
+        setGoogleBusy(false);
+        authNote('Google sign-in is not enabled yet. Turn it on in Supabase → Authentication → Providers → Google, then try again.', 'error');
+        return null;
+      }
+
+      /* Drop any leftover local session first. If the user cancels on Google's
+         screen there will be no new session, and this guarantees we do not
+         silently restore the old one. */
+      var ready = Promise.resolve();
+      try {
+        ready = S.client.auth.signOut({ scope: 'local' }).catch(function () { /* no session */ });
+      } catch (e) { ready = Promise.resolve(); }
+
+      return ready.then(function () {
+        setOAuthPending(true);
+        return S.client.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectTo(),
+            skipBrowserRedirect: true,
+            queryParams: { prompt: 'select_account', access_type: 'online' }
+          }
+        });
+      }).then(function (r) {
+        if (r && r.error) throw r.error;
+        if (!r || !r.data || !r.data.url) throw new Error('Google did not return a sign-in URL.');
+        window.location.assign(r.data.url);
+      });
+    }).catch(function (e) {
+      setOAuthPending(false);
+      setGoogleBusy(false);
+      var m = (e && e.message) || 'Could not start Google sign-in. Check your connection and try again.';
+      if (/provider is not enabled|unsupported provider/i.test(m)) {
+        m = 'Google sign-in is not enabled yet. Turn it on in Supabase → Authentication → Providers → Google.';
+      }
+      authNote(m, 'error');
+    });
+  }
+
   /* "Forgot password?" -> email a reset code, then ask for it */
   function startRecovery(email) {
     auth.purpose = 'recovery';
@@ -1951,7 +2126,8 @@
     S.client.auth.signInWithPassword({ email: email, password: pw })
       .then(function (r) {
         if (r.error) {
-          if (/not confirmed/i.test(r.error.message)) {
+          var msg = r.error.message || '';
+          if (/not confirmed/i.test(msg)) {
             auth.purpose = 'signup';
             auth.pendingEmail = email;
             setAuthStep('verify');
@@ -1959,11 +2135,18 @@
             resendCode();
             return;
           }
-          authError('err-pass', r.error.message);
+          if (/invalid login credentials/i.test(msg)) {
+            msg = 'Email or password is incorrect. Check both and try again.';
+          } else if (/rate limit|too many/i.test(msg)) {
+            msg = 'Too many attempts. Wait a minute, then try again.';
+          } else if (/failed to fetch|network/i.test(msg)) {
+            msg = 'Could not reach the server. Check your connection and try again.';
+          }
+          authError('err-pass', msg);
           return;
         }
         onSignedIn(r.data.user);
-      }).catch(function (e) { authError('err-pass', e.message); });
+      }).catch(function (e) { authError('err-pass', (e && e.message) || 'Could not sign in. Try again.'); });
   }
 
   function signUpWithPassword(username, email, pw) {
@@ -2017,13 +2200,30 @@
     });
   }
 
-  function onSignedIn(user) {
+  function onSignedIn(user, opts) {
+    opts = opts || {};
+
+    /* both getSession() and the auth listener can report the same sign-in;
+       only the first one should move the screen and show the toast */
+    if (state.signedIn && $('#view-app') && !$('#view-app').classList.contains('hidden')) {
+      auth.user = user || auth.user;
+      setOAuthPending(false);
+      return;
+    }
+
     auth.user = user || null;
     state.signedIn = true;
+    setOAuthPending(false);
     applyUser(user);
     save();
+
+    /* every successful sign-in lands on the dashboard (the home screen) */
+    state.route = 'dashboard';
+    try { window.history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
+
     showApp();
-    toast('Welcome, ' + you().name.split(' ')[0] + '!');
+    var first = you().name.split(' ')[0];
+    toast(opts.google ? 'Signed in with Google — welcome, ' + first + '!' : 'Welcome, ' + first + '!');
   }
 
   /* demo mode: no backend, everything stays in the browser */
@@ -2031,6 +2231,8 @@
     state.signedIn = true;
     applyUser(null);
     save();
+    state.route = 'dashboard';
+    try { window.history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
     showApp();
     toast('Signed in (demo mode)');
   }
@@ -2087,12 +2289,8 @@
     /* ---- auth ---- */
     $('#login-form').addEventListener('submit', submitAuth);
 
-    $('#auth-tabs').addEventListener('click', function (e) {
-      var tab = e.target.closest('[data-auth-tab]');
-      if (!tab) return;
-      e.preventDefault();
-      setAuthStep(tab.dataset.authTab);
-    });
+    var googleBtn = $('#btn-google');
+    if (googleBtn) googleBtn.addEventListener('click', continueWithGoogle);
 
     function bindReveal(btnId, inputId) {
       var b = $('#' + btnId);
@@ -2169,7 +2367,7 @@
         return;
       }
 
-      var si = e.target.closest('#link-signin');
+      var si = e.target.closest('#link-signin') || e.target.closest('#link-signin-top');
       if (si) {
         e.preventDefault();
         auth.purpose = 'signup';
@@ -2281,6 +2479,28 @@
     $('#drawer-content').addEventListener('change', onDrawerChange);
     $('#scrim').addEventListener('click', closeDrawer);
     window.addEventListener('hashchange', onHashChange);
+
+    /* If the browser restores this page from its back/forward cache after the
+       user backed out of Google, the load handler never runs. Reset the button
+       and confirm there is no session before showing the cancelled message. */
+    window.addEventListener('pageshow', function (e) {
+      if (!e.persisted) return;
+      setGoogleBusy(false);
+      if (!isOAuthPending()) return;
+
+      var cancelled = function () {
+        setOAuthPending(false);
+        showLogin();
+        authNote('Google sign-in was canceled. Choose a Google account to continue — you are not signed in.', 'error');
+      };
+
+      if (!S.client) { cancelled(); return; }
+      S.client.auth.getSession().then(function (r) {
+        var session = r && r.data ? r.data.session : null;
+        if (session && session.user) onSignedIn(session.user, { google: true });
+        else cancelled();
+      }).catch(cancelled);
+    });
 
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && e.target && e.target.id === 'add-search') {
@@ -2629,27 +2849,73 @@
   /* =============================== INIT ================================== */
   function init() {
     load();
+
+    /* Read the OAuth result before Supabase touches the URL. An error here
+       means no account was chosen, so we deliberately do not sign anyone in. */
+    var oauth = readOAuthReturn();
+
     bind();
 
-    /* restore an existing Supabase session, or fall back to the local one */
     if (S.client) {
+      /* catch the sign-in event for OAuth returns; e-mail/password is handled
+         by its own promise, so only act while an OAuth round trip is pending */
+      S.client.auth.onAuthStateChange(function (event, session) {
+        if (event === 'SIGNED_IN' && session && session.user && !state.signedIn && isOAuthPending()) {
+          onSignedIn(session.user, { google: true });
+        }
+      });
+
       S.client.auth.getSession().then(function (r) {
-        if (r && r.data && r.data.session && r.data.user) {
-          auth.user = r.data.user;
-          state.signedIn = true;
-          applyUser(r.data.user);
-          var h = (location.hash || '').replace('#/', '');
-          if (['dashboard', 'lists', 'spending'].indexOf(h) !== -1) state.route = h;
-          showApp();
-        } else {
+        var session = r && r.data ? r.data.session : null;
+        var user = r && r.data ? r.data.user : null;
+
+        if (oauth.failed) {
+          /* belt and braces: a cancelled prompt must not revive an old session */
+          try { S.client.auth.signOut({ scope: 'local' }).catch(function () {}); } catch (e) { /* ignore */ }
           state.signedIn = false;
           showLogin();
+          authNote(oauth.message, 'error');
+          return;
         }
-      }).catch(function () { showLogin(); });
+
+        if (session && user) {
+          if (oauth.pending) {
+            onSignedIn(user, { google: true });
+          } else {
+            auth.user = user;
+            state.signedIn = true;
+            applyUser(user);
+            var h = (window.location.hash || '').replace('#/', '');
+            if (['lists', 'spending'].indexOf(h) !== -1) state.route = h;
+            showApp();
+          }
+          return;
+        }
+
+        state.signedIn = false;
+        showLogin();
+        if (oauth.pending) {
+          setOAuthPending(false);
+          authNote('Google sign-in was canceled. Choose a Google account to continue — you are not signed in.', 'error');
+        }
+      }).catch(function () {
+        state.signedIn = false;
+        showLogin();
+        if (oauth.pending) setOAuthPending(false);
+      });
     } else {
-      var hh = (location.hash || '').replace('#/', '');
+      var hh = (window.location.hash || '').replace('#/', '');
       if (['dashboard', 'lists', 'spending'].indexOf(hh) !== -1) state.route = hh;
-      if (state.signedIn) { applyUser(null); showApp(); } else showLogin();
+      if (oauth.failed) {
+        state.signedIn = false;
+        showLogin();
+        authNote(oauth.message, 'error');
+      } else if (state.signedIn) {
+        applyUser(null);
+        showApp();
+      } else {
+        showLogin();
+      }
     }
 
     setAuthStep('signin');

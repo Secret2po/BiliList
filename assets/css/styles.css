@@ -8,6 +8,7 @@
   /* surfaces */
   --cream-50:  #FDFCF7;
   --cream-100: #FAF7EC;
+  --cream-150: #FEF0CB;   /* login header / footer band */
   --cream-200: #F4EFDC;
   --cream-300: #EAE3C9;
   --white:     #FFFFFF;
@@ -113,12 +114,25 @@ svg { display: block; }
 
 .login-top {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 14px 28px; background: var(--white);
-  border-bottom: 1px solid var(--line-2);
+  gap: 16px; padding: 14px 36px; background: var(--cream-150);
+  border-bottom: 1px solid #F4E4BC;
 }
-.login-top-right { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-soft); }
+.login-top-right { display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #6C5A30; }
 .login-top-right a { color: var(--green-700); font-weight: 600; }
 .login-top-right a:hover { text-decoration: underline; }
+
+.btn-signup {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 38px; padding: 0 18px; border-radius: 7px;
+  background: var(--green-600); color: var(--white) !important;
+  font-size: 13px; font-weight: 600; box-shadow: var(--sh-1);
+  transition: background .15s, box-shadow .15s;
+}
+.btn-signup:hover {
+  background: var(--green-700); color: var(--white); text-decoration: none !important;
+  box-shadow: var(--sh-2);
+}
+.btn-signup[hidden] { display: none; }
 
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 40px; height: 40px; flex: none; }
@@ -136,25 +150,8 @@ svg { display: block; }
   grid-template-columns: 1fr 1.08fr; gap: 56px; align-items: center;
 }
 
-/* --- auth tabs (sign in / create account) --- */
-.auth-tabs {
-  display: flex; gap: 4px; margin: 22px 0 18px; padding: 4px;
-  background: var(--cream-100); border-radius: var(--r-sm); border: 1px solid var(--line-2);
-}
-.auth-tabs[hidden] { display: none; }
-.auth-tab {
-  flex: 1; height: 36px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
-  color: var(--muted); transition: .15s; white-space: nowrap; padding: 0 6px;
-}
-.auth-tab:hover { color: var(--ink); }
-.auth-tab.is-active { background: var(--white); color: var(--green-700); box-shadow: var(--sh-1); }
-
 /* fields toggled by the auth steps */
-.field[hidden], .form-row[hidden] { display: none; }
-
-/* when the tab strip is hidden (verify / new password) the form still needs
-   some air below the subtitle */
-.auth-tabs[hidden] ~ #login-form { margin-top: 22px; }
+.field[hidden], .form-row[hidden], #google-auth[hidden] { display: none; }
 
 /* the email is locked while a verification code is outstanding */
 .field.is-readonly .input { background: var(--cream-100); color: var(--muted); }
@@ -223,15 +220,17 @@ svg { display: block; }
 
 .btn-google {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
-  height: 44px; margin-top: 22px; border-radius: var(--r-sm);
-  border: 1px solid var(--line); background: var(--white); font-weight: 600; font-size: 13.5px;
+  height: 46px; margin-top: 22px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--green-600); background: var(--white);
+  color: var(--green-700); font-weight: 600; font-size: 13.5px;
   box-shadow: var(--sh-1); transition: .15s;
 }
-.btn-google:hover { border-color: #C9D6CD; box-shadow: var(--sh-2); }
-.btn-google svg { width: 17px; height: 17px; }
+.btn-google:hover { background: var(--green-50); border-color: var(--green-700); box-shadow: var(--sh-2); }
+.btn-google:disabled { opacity: .68; cursor: progress; }
+.btn-google svg { width: 18px; height: 18px; flex: none; }
 
-.or-line { display: flex; align-items: center; gap: 12px; color: var(--muted-2); font-size: 11.5px; margin: 16px 0 18px; }
-.or-line::before, .or-line::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+.or-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 18px 0 20px; }
+.or-line::before, .or-line::after { content: ""; height: 1px; background: #E5DDC5; flex: 1; }
 
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 7px; color: var(--ink-soft); }
@@ -249,6 +248,12 @@ svg { display: block; }
 .input.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(192,69,59,.12); }
 .field-error { display: none; color: var(--danger); font-size: 11.5px; margin-top: 6px; }
 .field-error.show { display: block; }
+
+/* the login fields sit on a soft cream wash, like the reference design */
+.login-form-col .input { background: #FEFAF0; border-color: #E4D9B8; }
+.login-form-col .input:focus { background: var(--white); border-color: var(--green-500); }
+.login-form-col .input.invalid { border-color: var(--danger); }
+.login-form-col .field.is-readonly .input { background: var(--cream-100); }
 .icon-btn-inside {
   position: absolute; right: 6px; width: 30px; height: 30px; border-radius: 6px;
   display: grid; place-items: center; color: var(--muted);
@@ -366,11 +371,11 @@ svg { display: block; }
 
 .login-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 13px 28px; background: var(--gold-100); border-top: 1px solid #F0E2BE;
-  font-size: 12px; color: #7A6231;
+  padding: 18px 36px; background: var(--cream-150); border-top: 1px solid #F4E4BC;
+  font-size: 12.5px; color: #6C5A30;
 }
-.login-foot .links { display: flex; gap: 20px; }
-.login-foot a { color: #7A6231; }
+.login-foot .links { display: flex; gap: 22px; }
+.login-foot a { color: #6C5A30; font-weight: 500; }
 .login-foot a:hover { color: var(--ink); }
 
 /* ==========================================================================
@@ -1362,6 +1367,11 @@ svg { display: block; }
   .pantry-head, .pantry-row { grid-template-columns: 30px minmax(0,1fr) 120px 150px 120px; gap: 10px; }
 }
 @media (max-width: 620px) {
+  .login-top, .login-foot { padding-left: 16px; padding-right: 16px; }
+  .login-top { gap: 10px; }
+  .login-top-right { gap: 10px; }
+  .login-top-right > span { display: none; }
+  .login-foot { flex-direction: column; align-items: flex-start; gap: 10px; }
   .page { padding: 16px 14px 40px; }
   .topbar-inner { padding: 0 14px; gap: 10px; }
   .user-chip-text { display: none; }

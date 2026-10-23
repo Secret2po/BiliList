@@ -348,6 +348,8 @@ create trigger trg_pantry_touch before update on public.pantry
   for each row execute function public.touch_updated_at();
 
 -- new sign-up -> profile row + a starter workspace with the default categories
+-- works for e-mail/password and for OAuth providers such as Google, where the
+-- name arrives as full_name/name and the photo as picture/avatar_url
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -358,13 +360,27 @@ declare
   v_ws uuid;
   v_name text;
   v_username text;
+  v_avatar text;
 begin
-  v_name := coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1));
+  v_name := coalesce(
+    nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),
+    nullif(trim(new.raw_user_meta_data ->> 'name'), ''),
+    nullif(trim(split_part(coalesce(new.email, ''), '@', 1)), ''),
+    'Friend'
+  );
   v_username := nullif(trim(coalesce(new.raw_user_meta_data ->> 'username', '')), '');
+  v_avatar := coalesce(
+    nullif(trim(new.raw_user_meta_data ->> 'avatar_url'), ''),
+    nullif(trim(new.raw_user_meta_data ->> 'picture'), ''),
+    upper(left(v_name, 1))
+  );
 
   insert into public.profiles (id, username, full_name, avatar)
-  values (new.id, v_username, v_name, upper(left(coalesce(v_name, 'U'), 1)))
-  on conflict (id) do nothing;
+  values (new.id, v_username, v_name, v_avatar)
+  on conflict (id) do update
+    set full_name = excluded.full_name,
+        avatar    = excluded.avatar,
+        username  = coalesce(profiles.username, excluded.username);
 
   insert into public.workspaces (name, kind, owner_id)
   values (v_name || '''s household', 'household', new.id)

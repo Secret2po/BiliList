@@ -26,9 +26,17 @@ There is **no build step and no dependencies to install**. Pick whichever is eas
 > so your edits do not show up until you hard-refresh. Use `serve.py` while
 > you are working on the prototype.
 
-**Logging in:** the prototype does not check credentials. Enter any valid-looking
-email (e.g. `alex.lopez@email.com`) with any password, or just click
-**Continue with Google**. Both routes land on the dashboard.
+**Logging in:** the prototype connects to Supabase when `assets/js/config.js`
+contains a project URL and publishable key (it does by default). Use
+**Continue with Google** after enabling the Google provider once, or sign in
+with an email and password. Both routes land on the dashboard. If Supabase is
+not configured, the screen falls back to demo mode so the prototype can still be
+shown.
+
+> Google setup (Google Cloud client + Supabase provider + redirect URLs) is in
+> [`supabase/SETUP.md`](supabase/SETUP.md#5-turn-on-google-sign-in). Cancelling
+> the Google account chooser returns to the login screen with a message and does
+> not sign anyone in.
 
 **Resetting the demo:** the app persists changes to `localStorage`
 (key `bililist.prototype.v1`). To get back to the seeded sample data, run this in
@@ -44,12 +52,17 @@ __bililist.reset();   // clears storage and reloads
 
 ### Screen 1 — Login (`index.html`, `#/login`)
 * Split layout: credential form on the left, product hero on the right.
+* Warm `#FEF0CB` header and footer bands, with **Create an account** as the
+  top-right shortcut.
+* **Continue with Google** via Supabase OAuth (`prompt=select_account`). A
+  cancelled chooser stays on the login screen and shows an error; a chosen
+  account lands on `#/dashboard`.
 * Email + password with inline validation, show/hide password toggle,
   "Remember me", "Forgot password?".
-* "Continue with Google" button.
 * **Create an account** / **Sign up for free** flips the form into a sign-up state
   (the same panel, different copy) so the flow can be demonstrated end to end.
-* Sign-out from the profile drawer returns to this screen.
+* Sign-out from the profile drawer returns to this screen and clears the
+  Supabase session.
 
 ### Screen 2 — Dashboard (`#/dashboard`)
 Three-column home screen. The **centre column is the hero** — the active list
@@ -216,6 +229,7 @@ All tokens live at the top of `assets/css/styles.css` under `:root`.
 | `--navy-800` | `#14245C` | Brand "LIST", headings on dark |
 | `--teal-900` | `#173033` | Headline text, deep neutrals |
 | `--gold-500` | `#D9A441` | Tips, expiry warnings, footer band |
+| `--cream-150` | `#FEF0CB` | Login header / footer band |
 | `--cream-50` | `#FDFCF7` | Page background (warm cream) |
 | `--cream-200` | `#F4EFDC` | Progress tracks, inactive chips |
 | `--green-soft` | `#D4EDDA` | Active list card (soft green) |

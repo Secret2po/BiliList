@@ -88,7 +88,72 @@ For the 6-digit code to arrive you need an email provider:
 
 ---
 
+## 5. Turn on Google sign-in
+
+The **Continue with Google** button calls
+`supabase.auth.signInWithOAuth({ provider: 'google' })`. Supabase performs the
+OAuth exchange, so the browser never touches your Google client secret.
+
+### 5a. In Google Cloud Console
+
+1. Open <https://console.cloud.google.com> and create (or pick) a project.
+2. **APIs & Services → OAuth consent screen** → choose **External**, then fill
+   in the app name, support email and developer contact. While the app is in
+   **Testing**, add every Google account you will demo with under **Test users**.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
+   application type **Web application**.
+4. Add the **Authorized JavaScript origins**:
+   - `http://127.0.0.1:8123`
+   - `http://localhost:8123`
+   - `https://your-domain.example` (when deployed)
+5. Add the **Authorized redirect URI**. This is the Supabase callback, **not**
+   the BiliLIST page:
+
+   ```
+   https://xsjwhwrnseevlntxwjeg.supabase.co/auth/v1/callback
+   ```
+
+6. Copy the **Client ID** and **Client secret**.
+
+### 5b. In Supabase
+
+1. **Authentication → Providers → Google** → toggle it **on**.
+2. Paste the Client ID and Client secret, then **Save**.
+3. **Authentication → URL Configuration**:
+   - **Site URL**: `http://127.0.0.1:8123`
+   - **Redirect URLs**: `http://127.0.0.1:8123/**` and
+     `http://localhost:8123/**` (plus your production URL).
+4. Re-run `supabase/schema.sql` (safe to repeat). It updates
+   `handle_new_user()` so a Google account stores Google's `full_name`,
+   `name` and `picture` / `avatar_url` in `profiles`, and still gets a starter
+   workspace with the default categories.
+
+### How the Google flow behaves
+
+- The app asks Google for `prompt=select_account`, so the account chooser is
+  shown every time. A session is only created after an account is picked.
+- If the chooser is **cancelled**, Google returns `error=access_denied`. The app
+  reads that result *before* Supabase can restore anything, clears the pending
+  flag and any leftover local session, and stays on the login screen with:
+  *“Google sign-in was canceled. Choose a Google account to continue — you are
+  not signed in.”* It never falls back to demo mode or an older session.
+- If an account **is** chosen, Supabase creates the session, the app reads the
+  user, and the browser is moved to the home screen (`#/dashboard`).
+- If the provider is not enabled yet, the returned error is translated to a
+  short hint pointing at **Authentication → Providers → Google**.
+- `flowType: 'pkce'` is enabled in `assets/js/supabase-client.js`, so the OAuth
+  code is exchanged in the browser instead of putting tokens in the URL hash.
+
+> `redirectTo` is built from the current page URL. If you open the prototype as
+> `http://127.0.0.1:8123/index.html`, that exact URL must also be present in the
+> Supabase redirect allow list.
+
+---
+
 ## How the sign-in works
+
+**Continue with Google** — `signInWithOAuth()` with the Google provider, an
+account chooser, cancel handling and a dashboard redirect (see section 5).
 
 **Sign in** — email + password → `signInWithPassword()`.
 
