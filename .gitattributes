@@ -1,0 +1,2 @@
+# Keep Windows launchers usable after a fresh clone or ZIP download.
+*.bat text eol=crlf
