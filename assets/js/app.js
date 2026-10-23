@@ -2943,6 +2943,8 @@
       if (btn) btn.disabled = false;
       var m = (e && e.message) || 'Could not create your account. Please try again.';
       if (/taken|duplicate|unique/i.test(m)) m = 'That username is taken. Try another one.';
+      var note = $('#auth-note');
+      if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
       authError('err-username', m);
       $('#f-username').focus();
     });
@@ -3014,9 +3016,11 @@
     setOAuthPending(false);
     setGoogleBusy(true);
 
-    S.client.auth.signInWithIdToken({
-      provider: 'google',
-      token: response.credential
+    Promise.resolve().then(function () {
+      return S.client.auth.signInWithIdToken({
+        provider: 'google',
+        token: response.credential
+      });
     }).then(function (r) {
       if (r && r.error) throw r.error;
       var data = (r && r.data) || {};
