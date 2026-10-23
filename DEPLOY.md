@@ -19,6 +19,12 @@ GitHub Pages is the simplest option because the project is already on GitHub.
 5. Open that URL in an incognito window. The BiliLIST login screen should load.
    The `.nojekyll` file in the repo keeps GitHub Pages from running Jekyll.
 
+> You need **admin** access to the repository to change Pages settings. If the
+> page says you do not have permission, ask the repo owner (`Secret2po`) to
+> enable it. As a fallback, fork the repo to your own account, enable Pages
+> there, and use `https://<your-username>.github.io/BiliList/` — then update
+> the Supabase URLs and the public link in this guide to match.
+
 Every push to `main` updates the public site automatically.
 
 ## 2. Allow the public URL in Supabase
