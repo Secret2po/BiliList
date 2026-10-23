@@ -6,7 +6,11 @@ headers, which makes every reload pick up your latest changes.
 
     python serve.py                 # http://127.0.0.1:8123/  (this PC only)
     python serve.py 9000            # pick another port
-    python serve.py 8123 0.0.0.0    # also reachable from your phone on Wi-Fi
+    python serve.py 8123 0.0.0.0    # optional LAN dev only; not the demo path
+
+This server is for local development. The website itself is static, and the
+public GitHub Pages URL (see DEPLOY.md) is what groupmates and phones should
+open, because it works on any internet connection.
 """
 
 import http.server
@@ -53,9 +57,9 @@ if __name__ == "__main__":
         print("BiliLIST prototype running at http://127.0.0.1:%d/" % PORT)
         if HOST in ("0.0.0.0", "::"):
             for ip in lan_addresses():
-                print("  on your phone:  http://%s:%d/" % (ip, PORT))
-            print("  (phone and PC must be on the same Wi-Fi; allow port %d" % PORT)
-            print("   through Windows Firewall the first time it asks)")
+                print("  LAN dev only:   http://%s:%d/" % (ip, PORT))
+            print("  (same-Wi-Fi development only; for the demo and groupmates")
+            print("   use the public GitHub Pages URL from DEPLOY.md instead)")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()

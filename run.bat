@@ -7,9 +7,9 @@ if "%PORT%"=="" set PORT=8123
 
 where python >nul 2>nul
 if %errorlevel%==0 (
-  python serve.py %PORT% 0.0.0.0
+  python serve.py %PORT% 127.0.0.1
 ) else (
-  py -3 serve.py %PORT% 0.0.0.0
+  py -3 serve.py %PORT% 127.0.0.1
 )
 
 echo.

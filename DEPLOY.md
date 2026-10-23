@@ -1,9 +1,11 @@
 # Publish BiliLIST on the internet
 
-The local server (`python serve.py 8123 0.0.0.0`) is only reachable on the
-same Wi-Fi. A phone on mobile data cannot open `http://192.168.x.x:8123/`, and
-Google sign-in cannot return to that private address. The fix is to host the
-same static files at a public **HTTPS** URL and allow that URL in Supabase.
+BiliLIST is a static website, so it can be hosted at a public **HTTPS** URL and
+opened from any internet connection. The local server (for example
+`python serve.py 8123 0.0.0.0`) is development-only: it is reachable at best on
+the same Wi-Fi, a phone on mobile data cannot open `http://192.168.x.x:8123/`,
+and Google sign-in cannot return to that private address. Host the same static
+files publicly and allow that URL in Supabase instead.
 
 GitHub Pages is the simplest option because the project is already on GitHub.
 
@@ -29,10 +31,14 @@ Open <https://supabase.com/dashboard/project/xsjwhwrnseevlntxwjeg/auth/url-confi
   https://secret2po.github.io/BiliList/**
   http://localhost:8123/**
   http://127.0.0.1:8123/**
-  http://192.168.1.5:8123/**
   ```
-  The last two are only for local development; the first one is the public
-  site. If your PC's LAN address changes, update that line or remove it.
+  The first one is the public site and the only one the demo needs. The
+  `localhost` / `127.0.0.1` lines are optional and only for local development
+  on your own PC.
+
+Do **not** add a `192.168.x.x` address. It is private to one Wi-Fi network, so
+groupmates and phones on mobile data cannot reach it, and Google cannot use it
+as a public return address.
 
 Click **Save**.
 

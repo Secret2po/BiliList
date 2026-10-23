@@ -17,35 +17,30 @@ built from the BiliLIST UI mockups and the CS 3114 Feasibility Study / SPMP.
 
 ## 1. Running the prototype
 
-There is **no build step and no dependencies to install**. Pick whichever is easiest:
+There is **no build step and no dependencies to install**. For the demo and for
+groupmates on other networks, use the public URL:
 
 | Option | Steps |
 | --- | --- |
-| **A. Double-click** | Open `index.html` in Chrome / Edge / Firefox. Works straight from the file system. |
-| **B. Local server** (recommended) | From this folder run `python serve.py`, then open <http://127.0.0.1:8123/> |
-| **C. Phone on Wi-Fi** | Run `python serve.py 8123 0.0.0.0`, then on the phone open `http://<your-PC-ip>:8123/` (the script prints the address). |
+| **A. Public URL** (recommended for the demo) | Follow [`DEPLOY.md`](DEPLOY.md) to publish on GitHub Pages, then open `https://secret2po.github.io/BiliList/`. Works on any internet connection; no local server needed. |
+| **B. Local server** (development only) | From this folder run `python serve.py`, then open <http://127.0.0.1:8123/>. This binds to this PC only. |
+| **C. Double-click** (offline demo) | Open `index.html` in Chrome / Edge / Firefox. Works straight from the file system. |
 | **D. VS Code** | Install the *Live Server* extension, right-click `index.html` → *Open with Live Server*. |
-| **E. Public URL** (any network) | Follow [`DEPLOY.md`](DEPLOY.md) to publish on GitHub Pages, then open `https://secret2po.github.io/BiliList/`. Works on phone data; no local server needed. |
 
 > **Presentation day:** the two-device checklist is in
-> [`PRESENTATION.md`](PRESENTATION.md). The public GitHub Pages URL is the
-> recommended demo path; **`run.bat`** is the same-Wi-Fi backup.
+> [`PRESENTATION.md`](PRESENTATION.md). The public GitHub Pages URL is the demo
+> path.
 
-> A `192.168.x.x:8123` address is private to your Wi-Fi, so it cannot be opened
-> from mobile data. Google also returns to the origin you started from; if that
-> origin is not allow-listed, Supabase falls back to the **Site URL**. Use the
-> public HTTPS URL for demos on other networks. See [`DEPLOY.md`](DEPLOY.md).
+> The local server is **not** the demo path. `127.0.0.1` is this PC only, and a
+> `192.168.x.x` address is private to your Wi-Fi, so groupmates on other
+> networks cannot open it. Google sign-in also returns to the origin you started
+> from, so the public HTTPS URL must be the one allowed in Supabase. See
+> [`DEPLOY.md`](DEPLOY.md).
 
 > `serve.py` is the same as `python -m http.server` except it sends `no-store`
 > headers. Plain `http.server` lets the browser cache `app.js` / `styles.css`,
 > so your edits do not show up until you hard-refresh. Use `serve.py` while
 > you are working on the prototype.
->
-> For **Option C**, find the PC's address with `ipconfig` (the Wi-Fi adapter's
-> IPv4 address, e.g. `192.168.1.5`), keep the phone on the same Wi-Fi, and let
-> Python through Windows Defender Firewall when it asks. To use **Continue with
-> Google** from the phone, add `http://<your-PC-ip>:8123/**` to the Supabase
-> *Authentication → URL Configuration → Redirect URLs* list.
 
 **Logging in:** the prototype connects to Supabase when `assets/js/config.js`
 contains a project URL and publishable key (it does by default). Use
