@@ -66,6 +66,12 @@ once and the old blob is removed. Checking an item off updates the pantry on the
 server through a database trigger, so unchecking it takes the same amount back
 out and deleting a bought item removes its contribution.
 
+Signed-in browsers also subscribe to **Supabase Realtime**. A change made on
+one device (or in a second tab) appears on the others without a refresh; the
+small **Live** pill next to “Shared grocery list” turns green when the channel
+is connected. A refresh waits while you are typing or have a dialog open, so it
+never closes an editor mid-edit.
+
 **Resetting the demo:** in demo mode the app persists changes to `localStorage`
 (key `bililist.prototype.v2`). To get back to the seeded sample data, run this in
 the browser console:
@@ -325,18 +331,16 @@ still reads correctly if Google Fonts is unreachable (e.g. offline demo).
 The SPMP schedules a **Working Prototype in Week 9**, with Increment 3
 (Notification & Real-time Synchronization) landing in Weeks 10–12. Already in
 place: a **Supabase backend** (Postgres + row level security), real email and
-Google accounts, per-workspace categories/lists/items/pantry, and a responsive
-phone layout.
+Google accounts, per-workspace categories/lists/items/pantry, **Supabase
+Realtime** updates, and a responsive phone layout.
 
 Still to build, in order:
 
-1. **Real-time sync** — Supabase Realtime so several members editing the same
-   list see each other's changes live, instead of on the next refresh.
-2. **Offline fallback** — a local queue (IndexedDB) that replays edits once the
+1. **Offline fallback** — a local queue (IndexedDB) that replays edits once the
    connection returns.
-3. **Notifications** — push/email reminders for the calendar and for a shared
+2. **Notifications** — push/email reminders for the calendar and for a shared
    list being changed.
-4. **Household management** — wired-up invites, role changes and workspace
+3. **Household management** — wired-up invites, role changes and workspace
    switching (the UI exists; the Supabase calls are the next step).
 
 All screen markup is produced by small `render*()` functions in

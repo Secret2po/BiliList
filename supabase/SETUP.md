@@ -229,5 +229,20 @@ verification outstanding.
 `assets/js/app.js` hydrates the workspace once after sign-in
 (`ensure_user_workspace()` → categories, lists, items, pantry, members) and then
 writes each mutation back to the matching table. The render functions never talk
-to Supabase, so a real-time subscription can be added later without touching the
-markup.
+to Supabase, so the sync layer stays in one place.
+
+### Realtime
+
+After hydration the app opens a Supabase Realtime channel and listens to
+`postgres_changes` on `items`, `lists`, `pantry`, `categories` and
+`workspace_members`. Remote changes are debounced into one snapshot refresh, so
+two devices signed into the same account stay in step without a manual reload.
+The **Live** pill next to “Shared grocery list” is green when the channel is
+subscribed. Refreshes are paused while a dialog or text field has focus, so they
+never close an editor mid-edit.
+
+`Postgres Changes` only broadcasts tables that are in the `supabase_realtime`
+publication. The last section of `schema.sql` adds those five tables with an
+idempotent `DO` block. If realtime does not connect, confirm the tables are
+listed under **Database → Replication → supabase_realtime** in the dashboard
+(or re-run `schema.sql`).

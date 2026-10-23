@@ -19,7 +19,13 @@
     loading: false,
     userId: null,
     workspaceId: null,
-    workspace: null
+    workspace: null,
+    channel: null,
+    channelSeq: 0,
+    realtime: 'off',
+    refreshTimer: null,
+    refreshing: false,
+    lastWriteAt: 0
   };
 
   /* ------------------------------------------------------------------ util */
@@ -610,8 +616,9 @@
     });
   }
 
-  function fetchCloudSnapshot(user) {
-    return ensureCloudWorkspace(user).then(function (workspace) {
+  function fetchCloudSnapshot(user, knownWorkspace) {
+    var start = knownWorkspace ? Promise.resolve(knownWorkspace) : ensureCloudWorkspace(user);
+    return start.then(function (workspace) {
       cloud.workspace = workspace;
       cloud.workspaceId = workspace.id;
       return Promise.all([
@@ -900,8 +907,10 @@
     }).then(function (snapshot) {
       applyCloudSnapshot(snapshot);
       cloud.loading = false;
+      try { startRealtime(); } catch (e) { console.warn('Realtime unavailable', e); }
       return snapshot;
     }).catch(function (err) {
+      stopRealtime();
       cloud.loading = false;
       cloud.active = false;
       cloud.ready = false;
@@ -909,7 +918,185 @@
     });
   }
 
+  /* ---------------------------------------------------------- realtime sync */
+  /* Changes from another device (or another tab) arrive here. They are
+     debounced into one snapshot fetch and postponed while the user is typing
+     or has a dialog open, so a background refresh never closes an editor. */
+  function noteCloudWrite() {
+    cloud.lastWriteAt = Date.now();
+  }
+
+  function realtimeBusy() {
+    if (document.querySelector('#add-modal.show') ||
+        document.querySelector('#cat-modal.show') ||
+        document.querySelector('#drawer.show') ||
+        document.querySelector('#profile-menu.show') ||
+        document.querySelector('.item-pop')) {
+      return true;
+    }
+    var ae = document.activeElement;
+    return !!(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName));
+  }
+
+  function liveBadgeHtml() {
+    if (!cloud.active || cloud.realtime === 'off') return '';
+    var live = cloud.realtime === 'SUBSCRIBED';
+    return '<span class="live-badge' + (live ? ' is-live' : '') + '" id="live-badge"' +
+      ' title="' + (live ? 'Live — changes appear on every device' : 'Connecting to live sync…') + '">' +
+      '<i></i><span>' + (live ? 'Live' : 'Connecting') + '</span></span>';
+  }
+
+  function updateLiveBadge() {
+    var badge = document.getElementById('live-badge');
+    if (!badge) return;
+    if (cloud.realtime === 'off') { badge.style.display = 'none'; return; }
+    badge.style.display = '';
+    var live = cloud.realtime === 'SUBSCRIBED';
+    badge.classList.toggle('is-live', live);
+    badge.setAttribute('title', live ? 'Live — changes appear on every device' : 'Connecting to live sync…');
+    var label = badge.querySelector('span');
+    if (label) label.textContent = live ? 'Live' : 'Connecting';
+  }
+
+  function realtimeRelevant(payload) {
+    var row = (payload.new && Object.keys(payload.new).length) ? payload.new : (payload.old || {});
+    var i, j;
+
+    if (payload.table === 'items') {
+      if (payload.eventType === 'DELETE') {
+        for (i = 0; i < state.lists.length; i++) {
+          for (j = 0; j < state.lists[i].items.length; j++) {
+            if (state.lists[i].items[j].id === row.id) return true;
+          }
+        }
+        return false;
+      }
+      for (i = 0; i < state.lists.length; i++) {
+        if (state.lists[i].id === row.list_id) return true;
+      }
+      return false;
+    }
+
+    if (payload.table === 'lists') {
+      if (payload.eventType === 'DELETE') {
+        for (i = 0; i < state.lists.length; i++) if (state.lists[i].id === row.id) return true;
+        return false;
+      }
+      return row.workspace_id === cloud.workspaceId;
+    }
+
+    if (payload.table === 'pantry') {
+      if (payload.eventType === 'DELETE') {
+        for (i = 0; i < state.inventory.length; i++) if (state.inventory[i].id === row.id) return true;
+        return false;
+      }
+      return row.workspace_id === cloud.workspaceId;
+    }
+
+    if (payload.table === 'categories') {
+      if (payload.eventType === 'DELETE') {
+        for (i = 0; i < state.categories.length; i++) if (state.categories[i].id === row.id) return true;
+        return false;
+      }
+      return row.workspace_id === cloud.workspaceId;
+    }
+
+    if (payload.table === 'workspace_members') {
+      return row.workspace_id === cloud.workspaceId;
+    }
+
+    return false;
+  }
+
+  function onRealtimeEvent(payload) {
+    if (!cloud.active || !payload || !realtimeRelevant(payload)) return;
+    queueCloudRefresh();
+  }
+
+  function queueCloudRefresh() {
+    if (!cloud.active || !S.client) return;
+    var wait = 250;
+    var sinceWrite = Date.now() - (cloud.lastWriteAt || 0);
+    if (sinceWrite < 900) wait = 900 - sinceWrite;
+    clearTimeout(cloud.refreshTimer);
+    cloud.refreshTimer = setTimeout(runCloudRefresh, wait);
+  }
+
+  function runCloudRefresh() {
+    if (!cloud.active || !S.client) return;
+    if (cloud.refreshing) {
+      cloud.refreshTimer = setTimeout(runCloudRefresh, 400);
+      return;
+    }
+    if (realtimeBusy()) {
+      cloud.refreshTimer = setTimeout(runCloudRefresh, 700);
+      return;
+    }
+    cloud.refreshing = true;
+    Promise.resolve()
+      .then(function () {
+        return fetchCloudSnapshot(state.user || { id: cloud.userId }, cloud.workspace);
+      })
+      .then(function (snapshot) {
+        if (!cloud.active || !state.signedIn) return;
+        applyCloudSnapshot(snapshot);
+        render();
+      })
+      .catch(function (err) {
+        console.warn('Realtime refresh skipped', err);
+      })
+      .then(function () {
+        cloud.refreshing = false;
+      });
+  }
+
+  function stopRealtime() {
+    if (cloud.refreshTimer) {
+      clearTimeout(cloud.refreshTimer);
+      cloud.refreshTimer = null;
+    }
+    var channel = cloud.channel;
+    cloud.channel = null;
+    cloud.realtime = 'off';
+    if (channel && S.client) {
+      try { S.client.removeChannel(channel); } catch (e) { /* ignore */ }
+    }
+    updateLiveBadge();
+  }
+
+  function startRealtime() {
+    stopRealtime();
+    if (!S.client || typeof S.client.channel !== 'function' || !cloud.active || !cloud.workspaceId) return;
+
+    try {
+      cloud.channelSeq += 1;
+      var channel = S.client.channel('bililist-ws-' + cloud.workspaceId + '-' + cloud.channelSeq);
+      ['items', 'lists', 'pantry', 'categories', 'workspace_members'].forEach(function (table) {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: table }, onRealtimeEvent);
+      });
+
+      cloud.channel = channel;
+      cloud.realtime = 'connecting';
+      updateLiveBadge();
+
+      channel.subscribe(function (status) {
+        if (cloud.channel !== channel) return;
+        cloud.realtime = status;
+        updateLiveBadge();
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setTimeout(function () {
+            if (cloud.active && cloud.channel === channel) startRealtime();
+          }, 4000);
+        }
+      });
+    } catch (e) {
+      console.warn('Realtime unavailable', e);
+      stopRealtime();
+    }
+  }
+
   function cloudInsertItem(listId, item) {
+    noteCloudWrite();
     return S.client.from('items').insert({
       list_id: listId,
       name: item.name,
@@ -925,6 +1112,7 @@
   }
 
   function cloudUpdateItem(item) {
+    noteCloudWrite();
     return S.client.from('items').update({
       name: item.name,
       category_id: categoryIdFor(item.cat),
@@ -937,6 +1125,7 @@
   }
 
   function cloudToggleItem(item, done) {
+    noteCloudWrite();
     return S.client.from('items').update({ done: done }).eq('id', item.id).select('*').single().then(function (r) {
       if (r.error) throw r.error;
       return mapCloudItem(r.data);
@@ -944,6 +1133,7 @@
   }
 
   function cloudDeleteItem(item) {
+    noteCloudWrite();
     return S.client.from('items').delete().eq('id', item.id).then(function (r) {
       if (r.error) throw r.error;
       return true;
@@ -963,6 +1153,7 @@
   }
 
   function cloudInsertList(name, kind) {
+    noteCloudWrite();
     return S.client.from('lists').insert({
       workspace_id: cloud.workspaceId,
       name: name,
@@ -974,6 +1165,7 @@
   }
 
   function cloudInsertCategory(cat) {
+    noteCloudWrite();
     var maxOrder = 0;
     state.categories.forEach(function (c) { maxOrder = Math.max(maxOrder, Number(c.sort_order) || 0); });
     return S.client.from('categories').insert({
@@ -990,6 +1182,7 @@
   }
 
   function cloudUpdateCategory(cat) {
+    noteCloudWrite();
     return S.client.from('categories').update({
       name: cat.name,
       tone: cat.tone || 'grey',
@@ -1001,6 +1194,7 @@
   }
 
   function cloudDeleteCategory(id, fallbackId) {
+    noteCloudWrite();
     var chain = Promise.resolve();
     if (fallbackId) {
       chain = chain
@@ -1018,6 +1212,7 @@
   }
 
   function cloudAddPantry(entry) {
+    noteCloudWrite();
     return S.client.from('pantry')
       .select('id, qty_amount, qty_unit')
       .eq('workspace_id', cloud.workspaceId)
@@ -1050,6 +1245,7 @@
   }
 
   function cloudUpdatePantry(entry) {
+    noteCloudWrite();
     return S.client.from('pantry').update({
       name: entry.name,
       category_id: categoryIdFor(entry.cat),
@@ -1064,6 +1260,7 @@
   }
 
   function cloudDeletePantry(entry) {
+    noteCloudWrite();
     return S.client.from('pantry').delete().eq('id', entry.id).then(function (r) {
       if (r.error) throw r.error;
       return true;
@@ -1594,7 +1791,7 @@
       '<div class="list-head">' +
         '<div class="list-title-row">' +
           '<div>' +
-            '<span class="eyebrow">Shared grocery list</span>' +
+            '<span class="eyebrow">Shared grocery list' + liveBadgeHtml() + '</span>' +
             '<h2>' + esc(list.name) + '</h2>' +
           '</div>' +
           '<div class="list-actions">' +
@@ -2089,6 +2286,7 @@
     else if (state.route === 'spending') root.innerHTML = renderSpending();
     else root.innerHTML = renderDashboard();
     renderTopbar();
+    updateLiveBadge();
   }
 
   /* =============================== DRAWER ================================ */
@@ -2478,6 +2676,7 @@
     cloud.userId = null;
     cloud.workspaceId = null;
     cloud.workspace = null;
+    stopRealtime();
 
     state.signedIn = false;
     auth.user = null;
@@ -3807,7 +4006,15 @@
       setAuthStep: setAuthStep,
       applyUser: applyUser,
       showApp: showApp,
-      enterApp: enterApp
+      enterApp: enterApp,
+      cloud: cloud,
+      realtime: {
+        start: startRealtime,
+        stop: stopRealtime,
+        event: onRealtimeEvent,
+        relevant: realtimeRelevant,
+        refresh: runCloudRefresh
+      }
     };
   }
 

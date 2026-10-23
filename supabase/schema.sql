@@ -719,3 +719,31 @@ create policy p_activity_read on public.activity
 drop policy if exists p_activity_write on public.activity;
 create policy p_activity_write on public.activity
   for insert to authenticated with check (public.is_member(workspace_id));
+
+-- --------------------------------------------------------------------------
+--  7. Realtime
+--  Postgres Changes only broadcasts tables that belong to the
+--  supabase_realtime publication. Add the five tables the app subscribes to;
+--  the DO block keeps this safe to re-run.
+-- --------------------------------------------------------------------------
+do $$
+declare
+  t text;
+begin
+  if exists (
+    select 1 from pg_publication
+    where pubname = 'supabase_realtime' and not puballtables
+  ) then
+    foreach t in array array['items', 'lists', 'pantry', 'categories', 'workspace_members']
+    loop
+      if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = t
+      ) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
+  end if;
+end $$;

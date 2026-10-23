@@ -601,6 +601,22 @@ svg { display: block; }
 .list-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .list-title-row h2 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; margin-top: 4px; color: var(--teal-900); }
 .list-head .eyebrow { color: var(--green-700); }
+/* live-sync indicator after "Shared grocery list" */
+.live-badge {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px;
+  padding: 2px 8px; border-radius: 999px; vertical-align: middle;
+  background: #EDF0EA; color: #7C887C;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .02em;
+  text-transform: none; line-height: 1.5;
+}
+.live-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.live-badge.is-live { background: var(--green-100); color: var(--green-700); }
+.live-badge.is-live i { animation: live-pulse 2s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@media (max-width: 480px) {
+  .live-badge { padding: 3px 5px; margin-left: 6px; }
+  .live-badge span { display: none; }
+}
 .list-actions { display: flex; align-items: center; gap: 6px; }
 .list-actions .sq-btn {
   width: 36px; height: 36px; border-radius: var(--r-sm); display: grid; place-items: center;
