@@ -23,12 +23,19 @@ There is **no build step and no dependencies to install**. Pick whichever is eas
 | --- | --- |
 | **A. Double-click** | Open `index.html` in Chrome / Edge / Firefox. Works straight from the file system. |
 | **B. Local server** (recommended) | From this folder run `python serve.py`, then open <http://127.0.0.1:8123/> |
-| **C. VS Code** | Install the *Live Server* extension, right-click `index.html` → *Open with Live Server*. |
+| **C. Phone on Wi-Fi** | Run `python serve.py 8123 0.0.0.0`, then on the phone open `http://<your-PC-ip>:8123/` (the script prints the address). |
+| **D. VS Code** | Install the *Live Server* extension, right-click `index.html` → *Open with Live Server*. |
 
 > `serve.py` is the same as `python -m http.server` except it sends `no-store`
 > headers. Plain `http.server` lets the browser cache `app.js` / `styles.css`,
 > so your edits do not show up until you hard-refresh. Use `serve.py` while
 > you are working on the prototype.
+>
+> For **Option C**, find the PC's address with `ipconfig` (the Wi-Fi adapter's
+> IPv4 address, e.g. `192.168.1.5`), keep the phone on the same Wi-Fi, and let
+> Python through Windows Defender Firewall when it asks. To use **Continue with
+> Google** from the phone, add `http://<your-PC-ip>:8123/**` to the Supabase
+> *Authentication → URL Configuration → Redirect URLs* list.
 
 **Logging in:** the prototype connects to Supabase when `assets/js/config.js`
 contains a project URL and publishable key (it does by default). Use

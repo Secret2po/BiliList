@@ -4,15 +4,32 @@ Plain `python -m http.server` lets the browser cache app.js / styles.css, so
 edits do not show up until you hard-refresh. This version sends no-store
 headers, which makes every reload pick up your latest changes.
 
-    python serve.py            # http://127.0.0.1:8123/
-    python serve.py 9000       # pick another port
+    python serve.py                 # http://127.0.0.1:8123/  (this PC only)
+    python serve.py 9000            # pick another port
+    python serve.py 8123 0.0.0.0    # also reachable from your phone on Wi-Fi
 """
 
 import http.server
+import socket
 import socketserver
 import sys
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
+HOST = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+
+
+def lan_addresses():
+    """Every non-loopback IPv4 address, so you can type one into a phone."""
+    found = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith("127.") and ip not in found:
+                found.append(ip)
+    except OSError:
+        pass
+    return found
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
@@ -32,8 +49,13 @@ class ThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 if __name__ == "__main__":
-    with ThreadedServer(("127.0.0.1", PORT), NoCacheHandler) as httpd:
+    with ThreadedServer((HOST, PORT), NoCacheHandler) as httpd:
         print("BiliLIST prototype running at http://127.0.0.1:%d/" % PORT)
+        if HOST in ("0.0.0.0", "::"):
+            for ip in lan_addresses():
+                print("  on your phone:  http://%s:%d/" % (ip, PORT))
+            print("  (phone and PC must be on the same Wi-Fi; allow port %d" % PORT)
+            print("   through Windows Firewall the first time it asks)")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()

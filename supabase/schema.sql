@@ -621,6 +621,15 @@ alter table public.pantry             enable row level security;
 alter table public.events             enable row level security;
 alter table public.activity           enable row level security;
 
+-- Internal-only tables. The client never queries these directly: it calls the
+-- security-definer functions above, which run as the table owner. Turn RLS on
+-- with no policies (deny-all) and take away the API roles' table privileges, so
+-- the salted password material can never be read through PostgREST.
+alter table public.app_secrets       enable row level security;
+alter table public.password_registry enable row level security;
+revoke all on public.app_secrets       from anon, authenticated;
+revoke all on public.password_registry from anon, authenticated;
+
 -- profiles: you can read and update your own
 drop policy if exists p_profiles_read  on public.profiles;
 create policy p_profiles_read on public.profiles
