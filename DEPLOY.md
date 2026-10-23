@@ -88,8 +88,10 @@ The Google provider itself is configured at
 
 1. Turn **Wi-Fi off** on the phone (use mobile data).
 2. Open `https://secret2po.github.io/BiliList/`.
-3. Tap **Continue with Google**, choose the demo account, and confirm the
-   Google popup closes, you stay on the same HTTPS URL, and the dashboard loads.
+3. Tap **Continue with Google**. The account chooser should show
+   `secret2po.github.io` (not `...supabase.co`). Choose the demo account and
+   confirm the Google popup closes, you stay on the same HTTPS URL, and the
+   dashboard loads.
 4. Open the same URL on the laptop and sign in with the **same account**.
 5. Add or check off an item on one device; the other should update in about a
    second, with the **Live** pill green.
