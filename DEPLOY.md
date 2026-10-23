@@ -77,6 +77,11 @@ The Google provider itself is configured at
 The local server is no longer required for the presentation. Keep it for
 development, or use the public URL everywhere.
 
+> The public URL is open to anyone, but the data is per account. Different
+> Google/email accounts get different workspaces, so use the **same demo
+> account** on every device that must see the same list. Workspace invites are
+> not wired up yet.
+
 ## Troubleshooting
 
 | What you see | What to change |
