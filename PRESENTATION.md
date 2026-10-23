@@ -38,6 +38,11 @@ another network.
 
 1. Open the public GitHub Pages URL on both devices.
 2. Sign in on both with the **same account** (Google or email/password).
+
+   > If you use a Google account that has never chosen a BiliLIST username, the
+   > app shows **Create your BiliLIST account** and asks for a username. Pick
+   > one to continue; the starter list is kept.
+
 3. On the dashboard, confirm the small **Live** pill next to “Shared grocery
    list” is green.
 4. On the laptop, add **Milk** to *To Buy*. It should appear on the phone in
@@ -59,6 +64,9 @@ another network.
 | Google popup says **“The given origin is not allowed”** / `origin_mismatch` | Add `https://secret2po.github.io` to **Google Cloud → Credentials → your OAuth client → Authorized JavaScript origins**. For local testing also add `http://localhost:8123` and `http://127.0.0.1:8123`. Save, wait a minute, then reload. |
 | The Google button is missing or the old `...supabase.co` name appears | Hard-refresh. The primary flow uses Google's official button. If the green custom button is visible, the GIS script or `googleClientId` did not load, so the app fell back to the Supabase OAuth flow. |
 | `Google sign-in failed the nonce check` | In Supabase → Authentication → Providers → Google, turn on **Skip nonce checks**, then try again. |
+| Google button says **Continue as [Name]** | Google remembers the last account. Click the small arrow on the button to choose a different Google account. |
+| Google button is dimmed / cannot be clicked after sign-out | Hard-refresh. The app now clears its busy state on sign-out; make sure the page loaded `app.js?v=4` or later. |
+| A new Google account goes straight to the dashboard | Hard-refresh to load the latest `app.js`. The new-account step is triggered when the profile has no username yet. |
 | Google says “Access blocked” / app not verified | In Google Cloud → OAuth consent screen, add the demo Google account as a **Test user**, or publish the app. |
 | Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set **Site URL** to `https://secret2po.github.io/BiliList/` and add that URL under **Redirect URLs**. See [`DEPLOY.md`](DEPLOY.md). |
 | Google fallback fails with “redirect” / “invalid request” | The public origin is missing from **Supabase → Authentication → URL Configuration → Redirect URLs**. Add `https://secret2po.github.io/BiliList/**`. |

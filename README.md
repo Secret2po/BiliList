@@ -100,8 +100,9 @@ the Supabase table editor (or sign in with a fresh account).
   top-right shortcut.
 * **Continue with Google** via Google Identity Services → Supabase
   `signInWithIdToken`. The account chooser shows the app's domain; a cancelled
-  chooser stays on the login screen. The Supabase OAuth redirect remains as a
-  fallback.
+  chooser stays on the login screen. A Google account with no BiliLIST username
+  first sees a **Create your BiliLIST account** step. The Supabase OAuth
+  redirect remains as a fallback.
 * Email + password with inline validation, show/hide password toggle,
   "Remember me", "Forgot password?".
 * **Create an account** / **Sign up for free** flips the form into a sign-up state

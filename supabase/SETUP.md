@@ -179,10 +179,19 @@ fallback for browsers where the GIS script cannot load.
   `xsjwhwrnseevlntxwjeg.supabase.co`.
 - Google returns an ID token to the page. The app calls `signInWithIdToken`;
   Supabase verifies the token against the configured Google Client ID and
-  creates the session. The app then loads the dashboard.
+  creates the session.
+- If the Google account has **no `profiles.username` yet**, the app shows a
+  **Create your BiliLIST account** step and asks for a username before it loads
+  the dashboard. This is the normal first-time Google flow. Existing accounts
+  with a username go straight in. The username step updates the existing
+  profile row, so the starter list and workspace are kept.
 - If the user **cancels** the Google popup, no credential is returned and the
   app stays on the login screen. It does not revive an old session or fall back
   to demo mode.
+- After sign-out, the Google button may show **Continue as [Name]** because
+  Google remembers the last account. Click the small arrow on the button to
+  choose a different Google account. The app clears its busy state on sign-out,
+  so the button is clickable again.
 - If GIS is blocked or unavailable, the green custom button uses the older
   Supabase OAuth redirect. That fallback does show the Supabase callback
   domain; it is only a backup path.

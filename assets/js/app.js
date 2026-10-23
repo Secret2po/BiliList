@@ -2705,9 +2705,10 @@
   /* =============================== AUTH ================================== */
   var S = window.BiliSupabase || { client: null, isConfigured: false, mode: 'demo' };
 
-  /* step: signin | signup | verify | newpass
+  /* step: signin | signup | verify | newpass | onboard
      "verify" is not a tab — it is the email-confirmation step that follows a
-     sign-up, and also the step used by "Forgot password?". */
+     sign-up, and also the step used by "Forgot password?". "onboard" is the
+     extra username step for a Google account that has no BiliLIST profile yet. */
   var auth = {
     step: 'signin',
     purpose: 'signup',      /* signup | recovery */
@@ -2716,6 +2717,7 @@
   };
 
   function showLogin() {
+    setGoogleBusy(false);
     $('#view-app').classList.add('hidden');
     $('#view-login').classList.remove('hidden');
     setupGoogleButton();
@@ -2745,11 +2747,12 @@
     var isSignup = step === 'signup';
     var isVerify = step === 'verify';
     var isNewPass = step === 'newpass';
+    var isOnboard = step === 'onboard';
 
-    /* Google and the email form share the entry point; the verification and
-       reset steps are email-only, so the divider and Google button step aside. */
+    /* Google and the email form share the entry point; the verification,
+       reset and Google-onboarding steps do not need the Google button. */
     var googleWrap = $('#google-auth');
-    if (googleWrap) googleWrap.hidden = isVerify || isNewPass;
+    if (googleWrap) googleWrap.hidden = isVerify || isNewPass || isOnboard;
 
     var orLine = $('.or-line');
     if (orLine) orLine.textContent = isSignup ? 'or sign up with email' : 'or log in with email';
@@ -2758,16 +2761,22 @@
     var topLabel = $('#login-top-label');
     var topSignup = $('#link-signup-top');
     var topSignin = $('#link-signin-top');
-    if (topLabel) {
-      topLabel.textContent = isSignin ? 'New around here?'
-        : (isSignup ? 'Already have an account?' : 'Changed your mind?');
+    if (isOnboard) {
+      if (topLabel) topLabel.textContent = 'Signed in with Google';
+      if (topSignup) topSignup.hidden = true;
+      if (topSignin) topSignin.hidden = true;
+    } else {
+      if (topLabel) {
+        topLabel.textContent = isSignin ? 'New around here?'
+          : (isSignup ? 'Already have an account?' : 'Changed your mind?');
+      }
+      if (topSignup) topSignup.hidden = !isSignin;
+      if (topSignin) topSignin.hidden = isSignin;
     }
-    if (topSignup) topSignup.hidden = !isSignin;
-    if (topSignin) topSignin.hidden = isSignin;
 
     /* which fields are on screen */
-    $('#field-username').hidden = !isSignup;
-    $('#field-password').hidden = isVerify;
+    $('#field-username').hidden = !(isSignup || isOnboard);
+    $('#field-password').hidden = isVerify || isOnboard;
     $('#field-confirm').hidden = !(isSignup || isNewPass);
     $('#field-code').hidden = !isVerify;
     $('#row-remember').hidden = !isSignin;
@@ -2801,6 +2810,11 @@
         ? 'We sent a 6-digit code to ' + auth.pendingEmail
         : 'We sent you a 6-digit code.';
       $('#auth-secondary').innerHTML = '<span>Changed your mind?</span> <a class="link-green" href="#" id="link-signin">Back to sign in</a>';
+    } else if (isOnboard) {
+      heading.textContent = 'Create your BiliLIST account';
+      sub.textContent = 'Choose a username to finish setting up your Google account.';
+      btn.querySelector('span').textContent = 'Create account';
+      $('#auth-secondary').innerHTML = '<span>Not you?</span> <a class="link-green" href="#" id="link-cancel-onboard">Sign out</a>';
     } else {
       heading.textContent = 'Set a new password';
       sub.textContent = 'Your code checked out. Pick a new password for your account.';
@@ -2812,7 +2826,7 @@
 
     /* the email is locked while a code is outstanding */
     var em = $('#f-email');
-    var locked = isVerify || isNewPass;
+    var locked = isVerify || isNewPass || isOnboard;
     em.readOnly = locked;
     $('#field-email').classList.toggle('is-readonly', locked);
 
@@ -2887,6 +2901,45 @@
     return S.client.rpc('username_available', { p_username: u })
       .then(function (r) { return !(r && r.data === false); })
       .catch(function () { return true; });
+  }
+
+  /* Finish a Google sign-up: save the chosen username on the profile, then
+     enter the app through the normal signed-in path. */
+  function completeOnboarding(username) {
+    if (!S.client || !auth.user) {
+      authNote('Your session expired. Please sign in with Google again.', 'error');
+      return;
+    }
+
+    var btn = $('#btn-login');
+    if (btn) btn.disabled = true;
+    authNote('Creating your BiliLIST account…', 'info');
+
+    usernameAvailable(username).then(function (free) {
+      if (!free) throw new Error('That username is taken. Try another one.');
+      return S.client.from('profiles')
+        .update({ username: username })
+        .eq('id', auth.user.id)
+        .select('id, username, full_name, avatar')
+        .maybeSingle();
+    }).then(function (r) {
+      if (r && r.error) throw r.error;
+      if (!r || !r.data) throw new Error('Could not save your username. Please try again.');
+
+      var user = auth.user;
+      user.user_metadata = user.user_metadata || {};
+      user.user_metadata.username = username;
+      auth.user = user;
+
+      if (btn) btn.disabled = false;
+      onSignedIn(user, { google: true });
+    }).catch(function (e) {
+      if (btn) btn.disabled = false;
+      var m = (e && e.message) || 'Could not create your account. Please try again.';
+      if (/taken|duplicate|unique/i.test(m)) m = 'That username is taken. Try another one.';
+      authError('err-username', m);
+      $('#f-username').focus();
+    });
   }
 
   /* ---------------------------------------------------------- supabase ops */
@@ -2964,7 +3017,8 @@
       var session = data.session || null;
       var user = data.user || (session && session.user) || null;
       if (!user) throw new Error('Google sign-in returned no user.');
-      onSignedIn(user, { google: true });
+      setGoogleBusy(false);
+      routeAfterAuth(user, { google: true });
     }).catch(function (e) {
       setGoogleBusy(false);
       var m = (e && e.message) || 'Google sign-in failed. Please try again.';
@@ -3340,6 +3394,7 @@
 
   function enterApp(user, opts) {
     opts = opts || {};
+    setGoogleBusy(false);
 
     /* getSession() and the auth listener can both report the same sign-in.
        Only the first call should start hydration and show the toast. */
@@ -3379,6 +3434,34 @@
     toast(opts.google ? 'Signed in with Google — welcome, ' + first + '!' : 'Welcome, ' + first + '!');
   }
 
+  /* Read the signed-in user's profile. A Google account that has never picked
+     a username gets one more step before it can enter the app. */
+  function loadProfile(user) {
+    if (!S.client || !user) return Promise.resolve(null);
+    return S.client.from('profiles')
+      .select('id, username, full_name, avatar')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        return (r && r.data) || null;
+      });
+  }
+
+  function routeAfterAuth(user, opts) {
+    opts = opts || {};
+    return loadProfile(user).then(function (profile) {
+      if (profile && !String(profile.username || '').trim()) {
+        showOnboarding(user);
+        return;
+      }
+      onSignedIn(user, opts);
+    }).catch(function () {
+      /* Never lock someone out because the profile read failed. */
+      onSignedIn(user, opts);
+    });
+  }
+
   function onSignedIn(user, opts) {
     opts = opts || {};
 
@@ -3391,6 +3474,36 @@
     }
 
     enterApp(user, opts);
+  }
+
+  /* A Google account can authenticate before it has a BiliLIST username.
+     Show the account-creation step instead of dropping the person straight
+     into the dashboard. */
+  function showOnboarding(user) {
+    /* A restored session and the OAuth listener can both report the same
+       sign-in; do not wipe a username the person is already typing. */
+    if (auth.step === 'onboard' && auth.user && user && auth.user.id === user.id) return;
+
+    auth.user = user || null;
+    showLogin();
+    setAuthStep('onboard');
+
+    var email = (user && user.email) || '';
+    $('#f-email').value = email;
+    $('#f-username').value = '';
+    $('#f-pass').value = '';
+    $('#f-pass2').value = '';
+    $('#f-code').value = '';
+
+    authNote(
+      email
+        ? 'Signed in with Google as ' + email + '. Choose a username to create your BiliLIST account.'
+        : 'Choose a username to create your BiliLIST account.',
+      'info'
+    );
+
+    var input = $('#f-username');
+    if (input) input.focus();
   }
 
   /* demo mode: no backend, everything stays in the browser */
@@ -3422,6 +3535,14 @@
       if (np.length) { authError('err-pass', np[0]); $('#f-pass').focus(); return; }
       if (pw !== pw2) { authError('err-pass2'); $('#f-pass2').focus(); return; }
       saveNewPassword(pw);
+      return;
+    }
+
+    /* ---- first Google sign-in: pick a BiliLIST username ---- */
+    if (auth.step === 'onboard') {
+      var onb = usernameProblem(username);
+      if (onb) { authError('err-username', onb); $('#f-username').focus(); return; }
+      completeOnboarding(username);
       return;
     }
 
@@ -3537,6 +3658,13 @@
         $('#f-pass').value = '';
         $('#f-pass2').value = '';
         setAuthStep('signin');
+        return;
+      }
+
+      var co = e.target.closest('#link-cancel-onboard');
+      if (co) {
+        e.preventDefault();
+        signOut();
         return;
       }
 
@@ -4063,7 +4191,7 @@
          by its own promise, so only act while an OAuth round trip is pending */
       S.client.auth.onAuthStateChange(function (event, session) {
         if (event === 'SIGNED_IN' && session && session.user && !state.signedIn && isOAuthPending()) {
-          onSignedIn(session.user, { google: true });
+          routeAfterAuth(session.user, { google: true });
         }
       });
 
@@ -4083,7 +4211,7 @@
         if (session && user) {
           var h = (window.location.hash || '').replace('#/', '');
           var route = ['lists', 'spending'].indexOf(h) !== -1 ? h : 'dashboard';
-          enterApp(user, { google: !!oauth.pending, route: route });
+          routeAfterAuth(user, { google: !!oauth.pending, route: route });
           return;
         }
 
