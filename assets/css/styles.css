@@ -227,6 +227,7 @@ svg { display: block; }
 }
 .btn-google:hover { background: var(--green-50); border-color: var(--green-700); box-shadow: var(--sh-2); }
 .btn-google:disabled { opacity: .68; cursor: progress; }
+.btn-google[hidden] { display: none; }
 .btn-google svg { width: 18px; height: 18px; flex: none; }
 
 .google-signin-button { display: flex; justify-content: center; margin-top: 22px; min-height: 44px; }
