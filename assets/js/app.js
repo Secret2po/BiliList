@@ -2931,6 +2931,12 @@
       user.user_metadata.username = username;
       auth.user = user;
 
+      /* Keep the greeting in sync on the next page load too. The profile row
+         is the source of truth; this metadata update is best-effort. */
+      try {
+        S.client.auth.updateUser({ data: { username: username } }).catch(function () { /* ignore */ });
+      } catch (e) { /* ignore */ }
+
       if (btn) btn.disabled = false;
       onSignedIn(user, { google: true });
     }).catch(function (e) {
