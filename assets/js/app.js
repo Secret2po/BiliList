@@ -2947,16 +2947,23 @@
     var desc = String(p.error_description || p.error_message || '');
     var low = desc.toLowerCase();
 
-    if (code === 'access_denied' || /access[_ ]denied|cancel|denied|closed/.test(low)) {
-      return 'Google sign-in was canceled. Choose a Google account to continue — you are not signed in.';
-    }
     if (/provider is not enabled|unsupported provider|not enabled/.test(low)) {
       return 'Google sign-in is not enabled yet. Turn it on in Supabase → Authentication → Providers → Google.';
     }
-    if (/redirect|uri_mismatch|invalid request/.test(low)) {
-      return 'Google rejected the redirect URL. Add this page to the Supabase and Google Cloud redirect URL lists.';
+    /* Google uses "access_denied" for both a cancelled chooser and a blocked
+       app, so look at the description before assuming the user cancelled. */
+    if (/access blocked|not verified|verification|test user|app is blocked/.test(low)) {
+      return 'Google blocked this sign-in. In Google Cloud → OAuth consent screen, add this Google account as a Test user (or publish the app), then try again.';
     }
-    if (/access blocked|forbidden/.test(low)) {
+    if (/redirect|uri_mismatch|invalid request/.test(low)) {
+      return 'Google rejected the redirect URL. Add ' + redirectTo() +
+        ' to Supabase → Authentication → URL Configuration → Redirect URLs. ' +
+        'If you are opening a 192.168.x.x address, use the public HTTPS URL instead.';
+    }
+    if (code === 'access_denied' || /access[_ ]denied|cancel|denied|closed/.test(low)) {
+      return 'Google sign-in was canceled. Choose a Google account to continue — you are not signed in.';
+    }
+    if (/forbidden/.test(low)) {
       return 'Google blocked this sign-in. Check the OAuth consent screen and test-user list in Google Cloud.';
     }
     return 'Google sign-in failed' + (desc ? ': ' + desc : '. Please try again.');

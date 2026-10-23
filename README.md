@@ -25,10 +25,16 @@ There is **no build step and no dependencies to install**. Pick whichever is eas
 | **B. Local server** (recommended) | From this folder run `python serve.py`, then open <http://127.0.0.1:8123/> |
 | **C. Phone on Wi-Fi** | Run `python serve.py 8123 0.0.0.0`, then on the phone open `http://<your-PC-ip>:8123/` (the script prints the address). |
 | **D. VS Code** | Install the *Live Server* extension, right-click `index.html` → *Open with Live Server*. |
+| **E. Public URL** (any network) | Follow [`DEPLOY.md`](DEPLOY.md) to publish on GitHub Pages, then open `https://secret2po.github.io/BiliList/`. Works on phone data; no local server needed. |
 
 > **Presentation day:** the two-device checklist is in
-> [`PRESENTATION.md`](PRESENTATION.md). On Windows, double-click **`run.bat`**
-> to start the LAN-capable server and keep the window open.
+> [`PRESENTATION.md`](PRESENTATION.md). The public GitHub Pages URL is the
+> recommended demo path; **`run.bat`** is the same-Wi-Fi backup.
+
+> A `192.168.x.x:8123` address is private to your Wi-Fi, so it cannot be opened
+> from mobile data. Google also returns to the origin you started from; if that
+> origin is not allow-listed, Supabase falls back to the **Site URL**. Use the
+> public HTTPS URL for demos on other networks. See [`DEPLOY.md`](DEPLOY.md).
 
 > `serve.py` is the same as `python -m http.server` except it sends `no-store`
 > headers. Plain `http.server` lets the browser cache `app.js` / `styles.css`,
