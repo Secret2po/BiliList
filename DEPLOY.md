@@ -48,24 +48,38 @@ as a public return address.
 
 Click **Save**.
 
-Why this matters: the app sends the **current page** as `redirectTo`. If that
-origin is not on the allow list, Supabase falls back to the **Site URL**. With
-PKCE the browser stores a one-time verifier for the origin where the sign-in
-started, so a fallback to a different origin (or to an unreachable
-`192.168.x.x` address) makes the login fail.
+Why this still matters: email confirmation/reset links and the old Supabase
+OAuth fallback send the user back to the **current page**. If that origin is not
+on the allow list, Supabase falls back to the **Site URL**, and a different
+origin can make the link fail. The primary Google button now uses Google
+Identity Services directly, so it does not use this redirect.
 
 ## 3. Check the Google Cloud client
 
-Open <https://console.cloud.google.com/apis/credentials> and edit the **Web
+BiliLIST uses **Google Identity Services** for the primary Google button. Open
+<https://console.cloud.google.com/apis/credentials> and edit the **Web
 application** OAuth client used by Supabase:
 
-* **Authorized JavaScript origins:** `https://xsjwhwrnseevlntxwjeg.supabase.co`
-* **Authorized redirect URIs:** `https://xsjwhwrnseevlntxwjeg.supabase.co/auth/v1/callback`
+* **Authorized JavaScript origins:**
+  - `https://secret2po.github.io`
+  - `http://localhost:8123` (local development)
+  - `http://127.0.0.1:8123` (local development)
+* **Authorized redirect URIs:**
+  - `https://xsjwhwrnseevlntxwjeg.supabase.co/auth/v1/callback`
+    (kept for the Supabase OAuth fallback)
 
-Supabase handles the Google exchange, so the BiliLIST URL is allowed in
-Supabase (step 2), not directly in Google Cloud. If the OAuth consent screen is
-still in **Testing**, add the Google account you will demo with under **Test
-users**, or publish the app.
+Click **Save**. Google may take a few minutes to accept a new origin.
+
+The app sends the Google ID token to Supabase with `signInWithIdToken`. The
+Google **Client ID** in Google Cloud must match the one saved in Supabase
+(**Authentication → Providers → Google**) and the `googleClientId` value in
+`assets/js/config.js`. The account chooser will then show
+`secret2po.github.io` instead of the Supabase project ref.
+
+Set the OAuth consent screen **App name** to `BiliLIST` at
+<https://console.cloud.google.com/auth/branding>. If the consent screen is still
+in **Testing**, add the Google account you will demo with under **Test users**,
+or publish the app.
 
 The Google provider itself is configured at
 <https://supabase.com/dashboard/project/xsjwhwrnseevlntxwjeg/auth/providers>.
@@ -74,8 +88,8 @@ The Google provider itself is configured at
 
 1. Turn **Wi-Fi off** on the phone (use mobile data).
 2. Open `https://secret2po.github.io/BiliList/`.
-3. Tap **Continue with Google**, choose the demo account, and confirm you return
-   to the same HTTPS URL and land on the dashboard.
+3. Tap **Continue with Google**, choose the demo account, and confirm the
+   Google popup closes, you stay on the same HTTPS URL, and the dashboard loads.
 4. Open the same URL on the laptop and sign in with the **same account**.
 5. Add or check off an item on one device; the other should update in about a
    second, with the **Live** pill green.
@@ -93,9 +107,12 @@ development, or use the public URL everywhere.
 | What you see | What to change |
 | --- | --- |
 | `This site can't be reached` on mobile data | You are opening a `192.168.x.x` address. Use the public HTTPS URL. |
-| Google returns to `localhost` or a LAN IP | Supabase **Site URL** is still local. Set it to the public URL and add the public URL under **Redirect URLs**. |
-| `Invalid redirect URL` / `requested path is invalid` | The current origin is missing from Supabase **Redirect URLs**. Add it exactly, including the trailing `/**`. |
-| `Access blocked` / app not verified | Add the Google account as a **Test user** in Google Cloud → OAuth consent screen, or publish the app. |
+| Google popup: `The given origin is not allowed` / `origin_mismatch` | Add the page's exact origin (for example `https://secret2po.github.io`) to **Authorized JavaScript origins** in Google Cloud → Credentials → your OAuth client. For local testing also add `http://localhost:8123` and `http://127.0.0.1:8123`. |
+| Google popup says the app is blocked, or `Access blocked` | Add the demo account as a **Test user** in Google Cloud → OAuth consent screen, or publish the app. |
+| `Google sign-in failed the nonce check` | Supabase → Authentication → Providers → Google → turn on **Skip nonce checks**, then try again. |
+| The old `...supabase.co` name still appears | Hard-refresh the page. The primary flow should show Google's official button. If you see the green custom button, the Direct Google Sign-In script or `googleClientId` did not load, and the app is using the Supabase OAuth fallback. |
+| Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set Supabase **Site URL** to the public URL and add the public URL under **Redirect URLs**. |
+| `Invalid redirect URL` / `requested path is invalid` | The current origin is missing from Supabase **Redirect URLs**. Add it exactly. This affects email links and the fallback, not the primary Google popup. |
 | Login works but data does not sync | Re-run the updated `supabase/schema.sql`, then confirm the five tables under **Database → Replication → `supabase_realtime`**. |
 | GitHub Pages shows 404 | Wait a minute after enabling Pages; confirm the branch is `main` and the folder is `/ (root)`. |
 
@@ -103,9 +120,11 @@ development, or use the public URL everywhere.
 
 If GitHub Pages is blocked on the presentation network, drag this folder onto
 <https://app.netlify.com/drop> (or connect the GitHub repo). Netlify gives you a
-public HTTPS URL; add that URL to Supabase **Site URL** and **Redirect URLs**
-the same way. No code changes are needed because the app always uses the
-current origin for the OAuth return.
+public HTTPS URL. Add that origin to Google Cloud → Credentials → your OAuth
+client under **Authorized JavaScript origins** (the primary Google button uses
+the page origin), and add it to Supabase **Site URL** / **Redirect URLs** for
+email links and the fallback. No application code changes are needed because
+the app always uses the current origin.
 
 ## Security
 

@@ -2718,6 +2718,7 @@
   function showLogin() {
     $('#view-app').classList.add('hidden');
     $('#view-login').classList.remove('hidden');
+    setupGoogleButton();
   }
   function showApp() {
     $('#view-login').classList.add('hidden');
@@ -2905,6 +2906,124 @@
     return window.location.origin + window.location.pathname;
   }
 
+  /* -------------------------------------------------- Google Identity Services
+     The Google button uses Google's official GIS button. Google returns an ID
+     token straight to this page, and Supabase exchanges it for a session. The
+     account chooser therefore shows the app's own domain instead of the
+     Supabase project ref. The older Supabase OAuth redirect below stays as a
+     fallback for browsers where the GIS script cannot load. */
+  var googleReady = false;
+  var googleInitTried = false;
+  var googlePollTimer = null;
+  var googlePollTries = 0;
+
+  function googleButtonWidth() {
+    var col = $('.login-form-col');
+    var w = col ? col.clientWidth : 320;
+    return Math.max(200, Math.min(400, Math.floor(w || 320)));
+  }
+
+  function whenGoogleReady(cb) {
+    if (window.google && window.google.accounts && window.google.accounts.id) { cb(); return; }
+    if (googlePollTimer) return;
+    googlePollTries = 0;
+    googlePollTimer = window.setInterval(function () {
+      googlePollTries++;
+      if (window.google && window.google.accounts && window.google.accounts.id) {
+        window.clearInterval(googlePollTimer);
+        googlePollTimer = null;
+        cb();
+      } else if (googlePollTries >= 100) {
+        window.clearInterval(googlePollTimer);
+        googlePollTimer = null;
+      }
+    }, 100);
+  }
+
+  function handleGoogleCredential(response) {
+    clearAuthErrors();
+
+    if (!response || !response.credential) {
+      authNote('Google did not return a sign-in token. Please try again.', 'error');
+      return;
+    }
+    if (!S.client) {
+      authNote('Google sign-in needs a live Supabase connection. Check assets/js/config.js and refresh.', 'error');
+      return;
+    }
+
+    setOAuthPending(false);
+    setGoogleBusy(true);
+
+    S.client.auth.signInWithIdToken({
+      provider: 'google',
+      token: response.credential
+    }).then(function (r) {
+      if (r && r.error) throw r.error;
+      var data = (r && r.data) || {};
+      var session = data.session || null;
+      var user = data.user || (session && session.user) || null;
+      if (!user) throw new Error('Google sign-in returned no user.');
+      onSignedIn(user, { google: true });
+    }).catch(function (e) {
+      setGoogleBusy(false);
+      var m = (e && e.message) || 'Google sign-in failed. Please try again.';
+      if (/origin_mismatch|origin.*not.*allowed|unauthorized.*origin/i.test(m)) {
+        m = 'Google rejected this site. Add ' + window.location.origin +
+            ' to Authorized JavaScript origins in Google Cloud → Credentials → your OAuth client.';
+      } else if (/nonce/i.test(m)) {
+        m = 'Google sign-in failed the nonce check. In Supabase → Authentication → Providers → Google, turn on "Skip nonce checks", then try again.';
+      } else if (/provider is not enabled|unsupported provider/i.test(m)) {
+        m = 'Google sign-in is not enabled in Supabase → Authentication → Providers → Google.';
+      }
+      authNote(m, 'error');
+    });
+  }
+
+  function setupGoogleButton() {
+    if (googleReady || googleInitTried) return;
+    if (!$('#view-login') || $('#view-login').classList.contains('hidden')) return;
+
+    var host = $('#google-signin-button');
+    var custom = $('#btn-google');
+    var cfg = window.BILILIST_CONFIG || {};
+    var clientId = String(cfg.googleClientId || '').trim();
+
+    if (!host || !clientId || !S.client) return;
+    if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+      whenGoogleReady(setupGoogleButton);
+      return;
+    }
+
+    googleInitTried = true;
+    try {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredential,
+        ux_mode: 'popup',
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        use_fedcm_for_prompt: true
+      });
+      host.hidden = false;
+      window.google.accounts.id.renderButton(host, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'continue_with',
+        shape: 'pill',
+        logo_alignment: 'left',
+        width: googleButtonWidth()
+      });
+      if (custom) custom.hidden = true;
+      googleReady = true;
+    } catch (e) {
+      googleInitTried = false;
+      host.hidden = true;
+      if (custom) custom.hidden = false;
+    }
+  }
+
   /* ------------------------------------------------------ Google sign-in */
   /* We flag the moment we leave for Google, so when the browser comes back we
      can tell "an account was chosen" apart from "the prompt was cancelled".
@@ -3002,11 +3121,14 @@
 
   function setGoogleBusy(busy) {
     var btn = $('#btn-google');
-    if (!btn) return;
-    btn.disabled = !!busy;
-    btn.classList.toggle('is-busy', !!busy);
-    var label = btn.querySelector('.btn-google-label');
-    if (label) label.textContent = busy ? 'Connecting to Google…' : 'Continue with Google';
+    if (btn) {
+      btn.disabled = !!busy;
+      btn.classList.toggle('is-busy', !!busy);
+      var label = btn.querySelector('.btn-google-label');
+      if (label) label.textContent = busy ? 'Connecting to Google…' : 'Continue with Google';
+    }
+    var host = $('#google-signin-button');
+    if (host) host.classList.toggle('is-busy', !!busy);
   }
 
   function continueWithGoogle() {

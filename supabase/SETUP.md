@@ -117,75 +117,93 @@ For the 6-digit code to arrive you need an email provider:
 
 ## 5. Turn on Google sign-in
 
-The **Continue with Google** button calls
-`supabase.auth.signInWithOAuth({ provider: 'google' })`. Supabase performs the
-OAuth exchange, so the browser never touches your Google client secret.
+BiliLIST uses **Google Identity Services (GIS)** for the primary Google button.
+Google returns an ID token directly to the page, and the app passes it to
+Supabase with `signInWithIdToken({ provider: 'google', token })`. The account
+chooser therefore shows the app's own domain (`secret2po.github.io`) instead of
+the Supabase project ref. The older Supabase OAuth redirect is kept as a
+fallback for browsers where the GIS script cannot load.
 
 ### 5a. In Google Cloud Console
 
 1. Open <https://console.cloud.google.com> and create (or pick) a project.
-2. **APIs & Services → OAuth consent screen** → choose **External**, then fill
-   in the app name, support email and developer contact. While the app is in
-   **Testing**, add every Google account you will demo with under **Test users**.
+2. **APIs & Services → OAuth consent screen** → choose **External**, then set
+   the app name to `BiliLIST`, plus a support email and developer contact.
+   While the app is in **Testing**, add every Google account you will demo with
+   under **Test users**.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID** →
    application type **Web application**.
-4. Add the **Authorized JavaScript origins**:
-   - `https://xsjwhwrnseevlntxwjeg.supabase.co`
-5. Add the **Authorized redirect URI**. This is the Supabase callback, **not**
-   the BiliLIST page:
+4. Add the **Authorized JavaScript origins** where the app runs:
+   - `https://secret2po.github.io`
+   - `http://localhost:8123` (local development)
+   - `http://127.0.0.1:8123` (local development)
+
+   The Google account chooser uses this origin, which is why it shows the app's
+   domain rather than the Supabase domain.
+5. Add the **Authorized redirect URI** for the Supabase OAuth fallback. This is
+   the Supabase callback, **not** the BiliLIST page:
 
    ```
    https://xsjwhwrnseevlntxwjeg.supabase.co/auth/v1/callback
    ```
 
-   Supabase performs the Google exchange, so the BiliLIST public URL is allowed
-   in Supabase (section 5b), not directly in Google Cloud. Local development
-   uses the same Supabase callback; no localhost origin is needed here.
-
+   The primary GIS popup does not redirect through Supabase; this URI is only
+   used if the green fallback button falls back to `signInWithOAuth`.
 6. Copy the **Client ID** and **Client secret**.
 
 ### 5b. In Supabase
 
 1. **Authentication → Providers → Google** → toggle it **on**.
 2. Paste the Client ID and Client secret, then **Save**.
-3. **Authentication → URL Configuration**:
+3. Confirm the Client ID matches `googleClientId` in
+   `assets/js/config.js`. That value is public and safe to ship in the browser.
+4. Leave **Skip nonce checks** off initially. If the console reports a nonce
+   error, turn it on and try again (or add a nonce to the GIS request).
+5. **Authentication → URL Configuration**:
    - **Site URL**: `https://secret2po.github.io/BiliList/`
    - **Redirect URLs**: `https://secret2po.github.io/BiliList/**`
    - Optional, local development only: `http://localhost:8123/**` and
      `http://127.0.0.1:8123/**`
-4. Re-run `supabase/schema.sql` (safe to repeat). It updates
+6. Re-run `supabase/schema.sql` (safe to repeat). It updates
    `handle_new_user()` so a Google account stores Google's `full_name`,
    `name` and `picture` / `avatar_url` in `profiles`, and still gets a starter
    workspace with the default categories.
 
 ### How the Google flow behaves
 
-- The app asks Google for `prompt=select_account`, so the account chooser is
-  shown every time. A session is only created after an account is picked.
-- If the chooser is **cancelled**, Google returns `error=access_denied`. The app
-  reads that result *before* Supabase can restore anything, clears the pending
-  flag and any leftover local session, and stays on the login screen with:
-  *“Google sign-in was canceled. Choose a Google account to continue — you are
-  not signed in.”* It never falls back to demo mode or an older session.
-- If an account **is** chosen, Supabase creates the session, the app reads the
-  user, and the browser is moved to the home screen (`#/dashboard`).
-- If the provider is not enabled yet, the returned error is translated to a
-  short hint pointing at **Authentication → Providers → Google**.
-- `flowType: 'pkce'` is enabled in `assets/js/supabase-client.js`, so the OAuth
-  code is exchanged in the browser instead of putting tokens in the URL hash.
+- The app loads GIS and renders Google's official **Continue with Google**
+  button in place of the green custom button. The green button stays in the
+  page as a fallback if the GIS script cannot load.
+- Clicking the official button opens Google's account chooser. The chooser
+  shows `secret2po.github.io` (or `localhost` during development), not
+  `xsjwhwrnseevlntxwjeg.supabase.co`.
+- Google returns an ID token to the page. The app calls `signInWithIdToken`;
+  Supabase verifies the token against the configured Google Client ID and
+  creates the session. The app then loads the dashboard.
+- If the user **cancels** the Google popup, no credential is returned and the
+  app stays on the login screen. It does not revive an old session or fall back
+  to demo mode.
+- If GIS is blocked or unavailable, the green custom button uses the older
+  Supabase OAuth redirect. That fallback does show the Supabase callback
+  domain; it is only a backup path.
+- The existing `error=access_denied` and PKCE return handling remains for the
+  fallback and for email links.
+- `flowType: 'pkce'` remains enabled for the OAuth fallback and email flows.
 
-> `redirectTo` is built from the current page URL. The public demo URL is
-> `https://secret2po.github.io/BiliList/`, so allow
-> `https://secret2po.github.io/BiliList/**` in Supabase. If you develop locally
-> and open `http://127.0.0.1:8123/index.html`, that exact URL must also be
-> present in the redirect allow list.
+> `redirectTo` is built from the current page URL. It is used by email
+> confirmation/reset links and the OAuth fallback, not by the primary GIS
+> popup. The public demo URL is `https://secret2po.github.io/BiliList/`, so
+> allow `https://secret2po.github.io/BiliList/**` in Supabase. If you develop
+> locally and open `http://127.0.0.1:8123/index.html`, that exact URL must also
+> be present in the redirect allow list.
 
 ---
 
 ## How the sign-in works
 
-**Continue with Google** — `signInWithOAuth()` with the Google provider, an
-account chooser, cancel handling and a dashboard redirect (see section 5).
+**Continue with Google** — Google Identity Services returns an ID token, and
+`signInWithIdToken()` creates the Supabase session. The older
+`signInWithOAuth()` redirect remains as a fallback. See section 5.
 
 **Sign in** — email + password → `signInWithPassword()`.
 

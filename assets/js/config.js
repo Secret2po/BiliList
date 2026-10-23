@@ -13,5 +13,10 @@
 
 window.BILILIST_CONFIG = {
   supabaseUrl: 'https://xsjwhwrnseevlntxwjeg.supabase.co',
-  supabaseAnonKey: 'sb_publishable_JmA7W3FNfRSOaDvrl45qWg_7m7kn7JR'
+  supabaseAnonKey: 'sb_publishable_JmA7W3FNfRSOaDvrl45qWg_7m7kn7JR',
+
+  /* Public web client ID from Google Cloud. Google Identity Services uses it
+     in the browser; it is not a secret. It must match the Client ID saved in
+     Supabase -> Authentication -> Providers -> Google. */
+  googleClientId: '284932022302-jtjdsj4voem1ufaom28a4eu1q2t9rrpi.apps.googleusercontent.com'
 };

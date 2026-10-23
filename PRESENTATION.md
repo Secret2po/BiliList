@@ -56,9 +56,12 @@ another network.
 | Changes only appear after a reload | The realtime section of the schema was not applied. Re-run [`supabase/schema.sql`](supabase/schema.sql). |
 | App falls back to demo mode / cloud data is missing | The `ensure_user_workspace` RPC is missing, which means the schema has not been run. Run it, then reload and sign in again. |
 | Phone cannot open the page | Do not use a `192.168.x.x` or `127.0.0.1` address. Open the public `https://secret2po.github.io/BiliList/` URL. |
-| Google returns to `localhost` or a LAN IP | Set **Site URL** to `https://secret2po.github.io/BiliList/` and add that URL under **Redirect URLs**. See [`DEPLOY.md`](DEPLOY.md). |
-| Google sign-in fails with “redirect” / “invalid request” | The public origin is missing from **Supabase → Authentication → URL Configuration → Redirect URLs**. Add `https://secret2po.github.io/BiliList/**`. |
+| Google popup says **“The given origin is not allowed”** / `origin_mismatch` | Add `https://secret2po.github.io` to **Google Cloud → Credentials → your OAuth client → Authorized JavaScript origins**. For local testing also add `http://localhost:8123` and `http://127.0.0.1:8123`. Save, wait a minute, then reload. |
+| The Google button is missing or the old `...supabase.co` name appears | Hard-refresh. The primary flow uses Google's official button. If the green custom button is visible, the GIS script or `googleClientId` did not load, so the app fell back to the Supabase OAuth flow. |
+| `Google sign-in failed the nonce check` | In Supabase → Authentication → Providers → Google, turn on **Skip nonce checks**, then try again. |
 | Google says “Access blocked” / app not verified | In Google Cloud → OAuth consent screen, add the demo Google account as a **Test user**, or publish the app. |
+| Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set **Site URL** to `https://secret2po.github.io/BiliList/` and add that URL under **Redirect URLs**. See [`DEPLOY.md`](DEPLOY.md). |
+| Google fallback fails with “redirect” / “invalid request” | The public origin is missing from **Supabase → Authentication → URL Configuration → Redirect URLs**. Add `https://secret2po.github.io/BiliList/**`. |
 | A groupmate sees a different list | They are signed in with a different account. Use the **same demo account**, or wire up workspace invites (not implemented yet). |
 
 ## Fallback

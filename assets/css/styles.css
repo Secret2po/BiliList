@@ -229,6 +229,10 @@ svg { display: block; }
 .btn-google:disabled { opacity: .68; cursor: progress; }
 .btn-google svg { width: 18px; height: 18px; flex: none; }
 
+.google-signin-button { display: flex; justify-content: center; margin-top: 22px; min-height: 44px; }
+.google-signin-button[hidden] { display: none; }
+.google-signin-button.is-busy { opacity: .6; pointer-events: none; }
+
 .or-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 18px 0 20px; }
 .or-line::before, .or-line::after { content: ""; height: 1px; background: #E5DDC5; flex: 1; }
 
