@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=7">
+<link rel="stylesheet" href="assets/css/styles.css?v=8">
 </head>
 <body>
 
@@ -124,14 +124,31 @@
             <div class="or-line">or log in with email</div>
           </div>
 
-          <div class="field" id="field-username" hidden>
-            <label for="f-username">Username</label>
+          <div class="field" id="field-first" hidden>
+            <label for="f-first">First name</label>
             <div class="input-wrap">
               <svg><use href="#i-user"/></svg>
-              <input class="input with-icon" type="text" id="f-username" placeholder="e.g. alexlopez" autocomplete="username" maxlength="24" spellcheck="false">
+              <input class="input with-icon" type="text" id="f-first" placeholder="e.g. Alex" autocomplete="given-name" maxlength="60">
             </div>
-            <p class="field-hint">3–24 characters. Letters, numbers, dots and underscores.</p>
-            <div class="field-error" id="err-username">Pick a username with 3–24 letters, numbers, dots or underscores.</div>
+            <div class="field-error" id="err-first">Enter your first name.</div>
+          </div>
+
+          <div class="field" id="field-middle" hidden>
+            <label for="f-middle">Middle name <span class="optional">(optional)</span></label>
+            <div class="input-wrap">
+              <svg><use href="#i-user"/></svg>
+              <input class="input with-icon" type="text" id="f-middle" placeholder="e.g. Santos" autocomplete="additional-name" maxlength="60">
+            </div>
+            <div class="field-error" id="err-middle">Use letters only for your middle name.</div>
+          </div>
+
+          <div class="field" id="field-last" hidden>
+            <label for="f-last">Last name</label>
+            <div class="input-wrap">
+              <svg><use href="#i-user"/></svg>
+              <input class="input with-icon" type="text" id="f-last" placeholder="e.g. Lopez" autocomplete="family-name" maxlength="60">
+            </div>
+            <div class="field-error" id="err-last">Enter your last name.</div>
           </div>
 
           <div class="field" id="field-email">
@@ -141,6 +158,16 @@
               <input class="input with-icon" type="email" id="f-email" placeholder="you@example.com" autocomplete="email" inputmode="email">
             </div>
             <div class="field-error" id="err-email">Enter a valid email address, e.g. you@example.com</div>
+          </div>
+
+          <div class="field" id="field-birthday" hidden>
+            <label for="f-birthday">Birthday <span class="optional">(optional)</span></label>
+            <div class="input-wrap">
+              <svg><use href="#i-calendar"/></svg>
+              <input class="input with-icon" type="date" id="f-birthday" autocomplete="bday">
+            </div>
+            <p class="field-hint">Month / Day / Year</p>
+            <div class="field-error" id="err-birthday">Enter a valid birthday that is not in the future.</div>
           </div>
 
           <div class="field" id="field-password">
@@ -418,9 +445,9 @@
 
 <script src="https://accounts.google.com/gsi/client?hl=en" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="assets/js/config.js?v=7"></script>
-<script src="assets/js/supabase-client.js?v=7"></script>
-<script src="assets/js/data.js?v=7"></script>
-<script src="assets/js/app.js?v=7"></script>
+<script src="assets/js/config.js?v=8"></script>
+<script src="assets/js/supabase-client.js?v=8"></script>
+<script src="assets/js/data.js?v=8"></script>
+<script src="assets/js/app.js?v=8"></script>
 </body>
 </html>

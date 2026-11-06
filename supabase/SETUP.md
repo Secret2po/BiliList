@@ -24,7 +24,7 @@ That script creates:
 
 | Object | Purpose |
 | --- | --- |
-| `profiles` | one row per account (name, avatar) |
+| `profiles` | one row per account (full name, avatar, `profile_complete` onboarding flag) |
 | `workspaces` | a household or friend group |
 | `workspace_members` | who is in it and their role (owner / editor / viewer) |
 | `categories` | the aisles, with keywords, editable per household |
@@ -38,8 +38,9 @@ It also creates:
 
 * **Row level security policies** that enforce the Owner / Editor / Viewer rules
   and keep each workspace's rows private.
-* `handle_new_user()` — a new account gets a profile, a starter workspace and
-  the default categories.
+* `handle_new_user()` — a new account gets a profile (built from first/middle/
+  last name), a starter workspace and the default categories. E-mail sign-ups
+  are marked `profile_complete = true`; Google accounts confirm in the app.
 * `seed_workspace(uuid)` — the one place that writes the starter categories and
   the first list. It is used by the sign-up trigger and by the RPC below.
 * `ensure_user_workspace()` — an **authenticated RPC** the app calls right after
@@ -91,21 +92,25 @@ clear it, run `localStorage.removeItem('bililist.supabase')` in the console.
 For the 6-digit code to arrive you need an email provider:
 
 1. Dashboard → **Authentication** → **Providers** → **Email**.
-2. Supabase ships with a built-in SMTP that works for a few emails a day
+2. Turn **Confirm email** **on**. BiliLIST treats the emailed 6-digit code as
+   part of registration: without this setting Supabase signs the account in
+   immediately, and the app refuses to continue and tells you to enable it.
+3. Supabase ships with a built-in SMTP that works for a few emails a day
    (fine for a demo). For real usage, add **Resend**, **Brevo** or
    **SendGrid** under **Authentication → Emails → SMTP**.
-3. Under **Authentication → URL Configuration**, set **Site URL** to your
+4. Under **Authentication → URL Configuration**, set **Site URL** to your
    public URL (`https://secret2po.github.io/BiliList/`, see
    [`../DEPLOY.md`](../DEPLOY.md)) and add
    `https://secret2po.github.io/BiliList/**` to the redirect allow list. Keep
    `http://localhost:8123/**` only if you also develop locally. A
    `192.168.x.x` address is private to one Wi-Fi and will not work for
    groupmates.
-4. **Add the code to the email templates.** Supabase's stock templates only
+5. **Add the code to the email templates.** Supabase's stock templates only
    contain a link, so the 6-digit code never appears. Go to
    **Authentication → Emails** and put `{{ .Token }}` in the body of
    **Confirm signup** and **Reset password** (and **Magic Link** if you use
-   it), for example:
+   it) — the sign-up flow requires **Confirm signup** in particular — for
+   example:
 
    ```html
    <h2>Your BiliLIST code</h2>
@@ -165,9 +170,11 @@ fallback for browsers where the GIS script cannot load.
    - Optional, local development only: `http://localhost:8123/**` and
      `http://127.0.0.1:8123/**`
 6. Re-run `supabase/schema.sql` (safe to repeat). It updates
-   `handle_new_user()` so a Google account stores Google's `full_name`,
-   `name` and `picture` / `avatar_url` in `profiles`, and still gets a starter
-   workspace with the default categories.
+   `handle_new_user()` so a Google account stores Google's `given_name`,
+   `family_name`, `full_name` and `picture` / `avatar_url` in `profiles`, and
+   still gets a starter workspace with the default categories. It also adds
+   `profiles.profile_complete`; existing accounts are marked complete, while
+   new Google accounts stay incomplete until they confirm their name.
 
 ### How the Google flow behaves
 
@@ -180,11 +187,12 @@ fallback for browsers where the GIS script cannot load.
 - Google returns an ID token to the page. The app calls `signInWithIdToken`;
   Supabase verifies the token against the configured Google Client ID and
   creates the session.
-- If the Google account has **no `profiles.username` yet**, the app shows a
-  **Create your BiliLIST account** step and asks for a username before it loads
+- If the Google account's `profiles.profile_complete` is **false**, the app
+  shows a **Create your BiliLIST account** step. It prefills the first, middle
+  and last name from Google, and asks for a birthday (optional) before it loads
   the dashboard. This is the normal first-time Google flow. Existing accounts
-  with a username go straight in. The username step updates the existing
-  profile row, so the starter list and workspace are kept.
+  with `profile_complete = true` go straight in. The step updates the existing
+  profile row and preserves the starter list and workspace.
 - If the user **cancels** the Google popup, no credential is returned and the
   app stays on the login screen. It does not revive an old session or fall back
   to demo mode.

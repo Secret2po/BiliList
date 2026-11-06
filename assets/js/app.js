@@ -113,7 +113,7 @@
 
     var email = (user && user.email) || '';
     var meta = (user && user.user_metadata) || {};
-    var raw = meta.username || meta.full_name || (email ? email.split('@')[0] : 'You');
+    var raw = meta.full_name || meta.name || meta.username || (email ? email.split('@')[0] : 'You');
     var pretty = prettyName(raw);
 
     state.members = [{
@@ -2708,7 +2708,7 @@
   /* step: signin | signup | verify | newpass | onboard
      "verify" is not a tab — it is the email-confirmation step that follows a
      sign-up, and also the step used by "Forgot password?". "onboard" is the
-     extra username step for a Google account that has no BiliLIST profile yet. */
+     extra profile step for a Google account that has not completed BiliLIST. */
   var auth = {
     step: 'signin',
     purpose: 'signup',      /* signup | recovery */
@@ -2777,7 +2777,11 @@
     }
 
     /* which fields are on screen */
-    $('#field-username').hidden = !(isSignup || isOnboard);
+    var showNames = isSignup || isOnboard;
+    $('#field-first').hidden = !showNames;
+    $('#field-middle').hidden = !showNames;
+    $('#field-last').hidden = !showNames;
+    $('#field-birthday').hidden = !showNames;
     $('#field-password').hidden = isVerify || isOnboard;
     $('#field-confirm').hidden = !(isSignup || isNewPass);
     $('#field-code').hidden = !isVerify;
@@ -2796,7 +2800,7 @@
       $('#auth-secondary').innerHTML = '<span>Don\'t have an account?</span> <a class="link-green" href="#" id="link-signup">Sign up for free</a>';
     } else if (isSignup) {
       heading.textContent = 'Create your account';
-      sub.textContent = 'Start a shared list with the people you live, shop or plan with.';
+      sub.textContent = 'Use your full name so your household knows who you are. We will email a 6-digit code to verify your address.';
       btn.querySelector('span').textContent = 'Create account';
       label.textContent = 'Password';
       hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
@@ -2814,7 +2818,7 @@
       $('#auth-secondary').innerHTML = '<span>Changed your mind?</span> <a class="link-green" href="#" id="link-signin">Back to sign in</a>';
     } else if (isOnboard) {
       heading.textContent = 'Create your BiliLIST account';
-      sub.textContent = 'Choose a username to finish setting up your Google account.';
+      sub.textContent = 'Confirm your name and add an optional birthday to finish setting up your Google account.';
       btn.querySelector('span').textContent = 'Create account';
       $('#auth-secondary').innerHTML = '<span>Not you?</span> <a class="link-green" href="#" id="link-cancel-onboard">Sign out</a>';
     } else {
@@ -2836,10 +2840,10 @@
   }
 
   function clearAuthErrors() {
-    ['err-username', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
+    ['err-first', 'err-middle', 'err-last', 'err-birthday', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('show');
     });
-    ['f-username', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+    ['f-first', 'f-middle', 'f-last', 'f-birthday', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('invalid');
     });
     var note = $('#auth-note');
@@ -2849,8 +2853,15 @@
   function authError(field, message) {
     var el = $('#' + field);
     if (!el) return;
-    var input = { 'err-username': 'f-username', 'err-email': 'f-email', 'err-pass': 'f-pass', 'err-pass2': 'f-pass2', 'err-code': 'f-code' }[field];
-    if (field === 'err-username') el.textContent = message || 'Pick a username with 3–24 letters, numbers, dots or underscores.';
+    var input = {
+      'err-first': 'f-first', 'err-middle': 'f-middle', 'err-last': 'f-last',
+      'err-birthday': 'f-birthday', 'err-email': 'f-email',
+      'err-pass': 'f-pass', 'err-pass2': 'f-pass2', 'err-code': 'f-code'
+    }[field];
+    if (field === 'err-first') el.textContent = message || 'Enter your first name.';
+    if (field === 'err-middle') el.textContent = message || 'Use letters only for your middle name.';
+    if (field === 'err-last') el.textContent = message || 'Enter your last name.';
+    if (field === 'err-birthday') el.textContent = message || 'Enter a valid birthday that is not in the future.';
     if (field === 'err-email') el.textContent = message || 'Enter a valid email address, e.g. you@example.com';
     if (field === 'err-pass') el.textContent = message || 'Enter your password.';
     if (field === 'err-pass2') el.textContent = message || 'The two passwords do not match.';
@@ -2889,25 +2900,45 @@
     return out;
   }
 
-  var USERNAME_RE = /^[a-zA-Z0-9._]{3,24}$/;
+  /* Full names are what identify people in a shared household, so the
+     sign-up form uses first / optional middle / last name instead of a
+     nickname. The check is deliberately permissive about accents, spaces,
+     hyphens and apostrophes. */
+  var NAME_RE = /^[\p{L}\p{M}' .-]+$/u;
 
-  function usernameProblem(u) {
-    if (!u) return 'Choose a username.';
-    if (!USERNAME_RE.test(u)) return 'Use 3–24 letters, numbers, dots or underscores.';
-    if (/^[._]|[._]$/.test(u)) return 'A username cannot start or end with a dot or underscore.';
+  function nameProblem(value, label) {
+    var v = String(value || '').trim();
+    if (!v) return 'Enter your ' + label + '.';
+    if (v.length > 60) return 'Keep your ' + label + ' under 60 characters.';
+    if (/\d/.test(v)) return 'Names cannot include numbers.';
+    if (!NAME_RE.test(v)) return 'Use letters, spaces, hyphens or apostrophes only.';
     return '';
   }
 
-  function usernameAvailable(u) {
-    if (!S.client) return Promise.resolve(true);
-    return S.client.rpc('username_available', { p_username: u })
-      .then(function (r) { return !(r && r.data === false); })
-      .catch(function () { return true; });
+  function birthdayProblem(value) {
+    if (!value) return '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Enter a valid birthday.';
+    var d = new Date(value + 'T00:00:00');
+    if (isNaN(d.getTime())) return 'Enter a valid birthday.';
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d > today) return 'Birthday cannot be in the future.';
+    if (d.getFullYear() < 1900) return 'Enter a birthday after 1900.';
+    return '';
   }
 
-  /* Finish a Google sign-up: save the chosen username on the profile, then
-     enter the app through the normal signed-in path. */
-  function completeOnboarding(username) {
+  function fullNameOf(first, middle, last) {
+    return [first, middle, last]
+      .map(function (p) { return String(p || '').trim(); })
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /* Finish a Google sign-up: save the confirmed name and optional birthday,
+     mark the profile complete, then enter the app. */
+  function completeOnboarding(details) {
     if (!S.client || !auth.user) {
       authNote('Your session expired. Please sign in with Google again.', 'error');
       return;
@@ -2917,39 +2948,54 @@
     if (btn) btn.disabled = true;
     authNote('Creating your BiliLIST account…', 'info');
 
-    usernameAvailable(username).then(function (free) {
-      if (!free) throw new Error('That username is taken. Try another one.');
-      return S.client.from('profiles')
-        .update({ username: username })
-        .eq('id', auth.user.id)
-        .select('id, username, full_name, avatar')
-        .maybeSingle();
-    }).then(function (r) {
-      if (r && r.error) throw r.error;
-      if (!r || !r.data) throw new Error('Could not save your username. Please try again.');
+    S.client.from('profiles')
+      .update({
+        full_name: details.fullName,
+        profile_complete: true
+      })
+      .eq('id', auth.user.id)
+      .select('*')
+      .maybeSingle()
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        if (!r || !r.data) throw new Error('Could not save your details. Please try again.');
 
-      var user = auth.user;
-      user.user_metadata = user.user_metadata || {};
-      user.user_metadata.username = username;
-      auth.user = user;
+        var user = auth.user;
+        user.user_metadata = user.user_metadata || {};
+        user.user_metadata.first_name = details.firstName;
+        user.user_metadata.middle_name = details.middleName || '';
+        user.user_metadata.last_name = details.lastName;
+        user.user_metadata.full_name = details.fullName;
+        user.user_metadata.birthday = details.birthday || null;
+        auth.user = user;
 
-      /* Keep the greeting in sync on the next page load too. The profile row
-         is the source of truth; this metadata update is best-effort. */
-      try {
-        S.client.auth.updateUser({ data: { username: username } }).catch(function () { /* ignore */ });
-      } catch (e) { /* ignore */ }
+        /* Keep the details available on the next page load. The profile row
+           is the source of truth; this metadata update is best-effort. */
+        try {
+          S.client.auth.updateUser({
+            data: {
+              first_name: details.firstName,
+              middle_name: details.middleName || '',
+              last_name: details.lastName,
+              full_name: details.fullName,
+              birthday: details.birthday || null
+            }
+          }).catch(function () { /* ignore */ });
+        } catch (e) { /* ignore */ }
 
-      if (btn) btn.disabled = false;
-      onSignedIn(user, { google: true });
-    }).catch(function (e) {
-      if (btn) btn.disabled = false;
-      var m = (e && e.message) || 'Could not create your account. Please try again.';
-      if (/taken|duplicate|unique/i.test(m)) m = 'That username is taken. Try another one.';
-      var note = $('#auth-note');
-      if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
-      authError('err-username', m);
-      $('#f-username').focus();
-    });
+        if (btn) btn.disabled = false;
+        onSignedIn(user, { google: true });
+      }).catch(function (e) {
+        if (btn) btn.disabled = false;
+        var m = (e && e.message) || 'Could not create your account. Please try again.';
+        if (/profile_complete|column .* does not exist/i.test(m)) {
+          m = 'The database needs the new profile fields. Run supabase/schema.sql, then try again.';
+        }
+        var note = $('#auth-note');
+        if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
+        authError('err-first', m);
+        $('#f-first').focus();
+      });
   }
 
   /* ---------------------------------------------------------- supabase ops */
@@ -3312,7 +3358,7 @@
           return;
         }
 
-        onSignedIn(r.data.user);
+        routeAfterAuth(r.data.user);
       }).catch(function (e) { authError('err-code', e.message); });
   }
 
@@ -3321,7 +3367,7 @@
     S.client.auth.updateUser({ password: pw })
       .then(function (r) {
         if (r.error) { authError('err-pass', r.error.message); return; }
-        onSignedIn(r.data.user);
+        routeAfterAuth(r.data.user);
       }).catch(function (e) { authError('err-pass', e.message); });
   }
 
@@ -3349,58 +3395,61 @@
           authError('err-pass', msg);
           return;
         }
-        onSignedIn(r.data.user);
+        routeAfterAuth(r.data.user);
       }).catch(function (e) { authError('err-pass', (e && e.message) || 'Could not sign in. Try again.'); });
   }
 
-  function signUpWithPassword(username, email, pw) {
+  function signUpWithPassword(details, email, pw) {
     if (!S.client) { signInDemo(); return; }
 
-    usernameAvailable(username).then(function (free) {
-      if (!free) {
-        authError('err-username', 'That username is taken. Try another one.');
-        $('#f-username').focus();
+    claimPassword(pw).then(function (claim) {
+      if (claim.taken) {
+        authError('err-pass', 'That password is already used by another account. Please pick a different one.');
         return;
       }
 
-      claimPassword(pw).then(function (claim) {
-        if (claim.taken) {
-          authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+      var data = {
+        first_name: details.firstName,
+        middle_name: details.middleName || '',
+        last_name: details.lastName,
+        full_name: details.fullName,
+        birthday: details.birthday || ''
+      };
+      if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
+
+      S.client.auth.signUp({
+        email: email,
+        password: pw,
+        options: { data: data, emailRedirectTo: redirectTo() }
+      }).then(function (r) {
+        if (r.error) {
+          var m = r.error.message || '';
+          if (/PASSWORD_ALREADY_IN_USE/i.test(m)) {
+            authError('err-pass', 'That password is already used by another account. Please pick a different one.');
+          } else if (/already registered|duplicate/i.test(m)) {
+            authError('err-email', 'An account already uses this email. Sign in instead.');
+          } else {
+            authError('err-pass', m);
+          }
           return;
         }
 
-        var data = { username: username, full_name: username };
-        if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
+        /* Email verification is part of registration. If Supabase hands back
+           a session, confirmation is turned off in the project settings; do
+           not let the account in without the emailed code. */
+        if (r.data.session) {
+          try { S.client.auth.signOut({ scope: 'local' }).catch(function () {}); } catch (e) { /* ignore */ }
+          authNote('Email verification is required, but this Supabase project auto-confirmed the account. In Supabase → Authentication → Providers → Email, turn on “Confirm email”, then sign up again.', 'error');
+          return;
+        }
 
-        S.client.auth.signUp({
-          email: email,
-          password: pw,
-          options: { data: data, emailRedirectTo: redirectTo() }
-        }).then(function (r) {
-          if (r.error) {
-            var m = r.error.message || '';
-            if (/PASSWORD_ALREADY_IN_USE/i.test(m)) {
-              authError('err-pass', 'That password is already used by another account. Please pick a different one.');
-            } else if (/already registered|duplicate/i.test(m)) {
-              authError('err-email', 'An account already uses this email. Sign in instead.');
-            } else {
-              authError('err-pass', m);
-            }
-            return;
-          }
-
-          /* confirmation turned off -> straight in */
-          if (r.data.session) { onSignedIn(r.data.user); return; }
-
-          /* confirmation turned on -> ask for the emailed code */
-          auth.purpose = 'signup';
-          auth.pendingEmail = email;
-          setAuthStep('verify');
-          $('#f-code').value = '';
-          authNote('Account created. We emailed a 6-digit code to ' + email + '.', 'ok');
-          $('#f-code').focus();
-        }).catch(function (e) { authError('err-pass', e.message); });
-      });
+        auth.purpose = 'signup';
+        auth.pendingEmail = email;
+        setAuthStep('verify');
+        $('#f-code').value = '';
+        authNote('Account created. We emailed a 6-digit code to ' + email + '. Enter it to finish signing up.', 'ok');
+        $('#f-code').focus();
+      }).catch(function (e) { authError('err-pass', e.message); });
     });
   }
 
@@ -3446,12 +3495,13 @@
     toast(opts.google ? 'Signed in with Google — welcome, ' + first + '!' : 'Welcome, ' + first + '!');
   }
 
-  /* Read the signed-in user's profile. A Google account that has never picked
-     a username gets one more step before it can enter the app. */
+  /* Read the signed-in user's profile. New Google accounts get one more step
+     before they can enter the app; e-mail accounts are completed by the
+     sign-up form and their e-mail verification. */
   function loadProfile(user) {
     if (!S.client || !user) return Promise.resolve(null);
     return S.client.from('profiles')
-      .select('id, username, full_name, avatar')
+      .select('*')
       .eq('id', user.id)
       .maybeSingle()
       .then(function (r) {
@@ -3460,10 +3510,29 @@
       });
   }
 
+  function profileNeedsSetup(profile) {
+    if (!profile) return false;
+    if (profile.profile_complete === true) return false;
+    if (profile.profile_complete === false) return true;
+    /* Older databases without the flag: a username or full name means the
+       account was already set up. */
+    return !String(profile.username || '').trim() && !String(profile.full_name || '').trim();
+  }
+
   function routeAfterAuth(user, opts) {
     opts = opts || {};
+
+    /* E-mail accounts must confirm their address before they can enter. */
+    var provider = (user && user.app_metadata && user.app_metadata.provider) || '';
+    if (user && !user.email_confirmed_at && provider === 'email') {
+      state.signedIn = false;
+      showLogin();
+      authNote('Please verify your email before signing in. Check your inbox for the 6-digit code.', 'error');
+      return Promise.resolve();
+    }
+
     return loadProfile(user).then(function (profile) {
-      if (profile && !String(profile.username || '').trim()) {
+      if (profileNeedsSetup(profile)) {
         showOnboarding(user);
         return;
       }
@@ -3488,12 +3557,12 @@
     enterApp(user, opts);
   }
 
-  /* A Google account can authenticate before it has a BiliLIST username.
-     Show the account-creation step instead of dropping the person straight
-     into the dashboard. */
+  /* A Google account can authenticate before it has a completed BiliLIST
+     profile. Show the account-creation step instead of dropping the person
+     straight into the dashboard. */
   function showOnboarding(user) {
     /* A restored session and the OAuth listener can both report the same
-       sign-in; do not wipe a username the person is already typing. */
+       sign-in; do not wipe details the person is already typing. */
     if (auth.step === 'onboard' && auth.user && user && auth.user.id === user.id) return;
 
     auth.user = user || null;
@@ -3501,20 +3570,40 @@
     setAuthStep('onboard');
 
     var email = (user && user.email) || '';
+    var meta = (user && user.user_metadata) || {};
+    var first = meta.first_name || meta.given_name || '';
+    var middle = meta.middle_name || '';
+    var last = meta.last_name || meta.family_name || '';
+    var full = meta.full_name || meta.name || '';
+
+    if ((!first || !last) && full) {
+      var parts = String(full).trim().split(/\s+/).filter(Boolean);
+      if (parts.length === 1) {
+        first = first || parts[0];
+      } else if (parts.length > 1) {
+        first = first || parts[0];
+        last = last || parts[parts.length - 1];
+        if (!middle) middle = parts.slice(1, -1).join(' ');
+      }
+    }
+
+    $('#f-first').value = first;
+    $('#f-middle').value = middle;
+    $('#f-last').value = last;
+    $('#f-birthday').value = meta.birthday || '';
     $('#f-email').value = email;
-    $('#f-username').value = '';
     $('#f-pass').value = '';
     $('#f-pass2').value = '';
     $('#f-code').value = '';
 
     authNote(
       email
-        ? 'Signed in with Google as ' + email + '. Choose a username to create your BiliLIST account.'
-        : 'Choose a username to create your BiliLIST account.',
+        ? 'Signed in with Google as ' + email + '. Confirm your name and add an optional birthday to create your BiliLIST account.'
+        : 'Confirm your name and add an optional birthday to create your BiliLIST account.',
       'info'
     );
 
-    var input = $('#f-username');
+    var input = $('#f-first');
     if (input) input.focus();
   }
 
@@ -3527,11 +3616,38 @@
     e.preventDefault();
     clearAuthErrors();
 
-    var username = ($('#f-username').value || '').trim();
+    var first = ($('#f-first').value || '').trim();
+    var middle = ($('#f-middle').value || '').trim();
+    var last = ($('#f-last').value || '').trim();
+    var birthday = ($('#f-birthday').value || '').trim();
     var email = ($('#f-email').value || '').trim();
     var pw = $('#f-pass').value || '';
     var pw2 = $('#f-pass2').value || '';
     var code = ($('#f-code').value || '').replace(/\D/g, '');
+
+    function validateNameFields() {
+      var fp = nameProblem(first, 'first name');
+      if (fp) { authError('err-first', fp); $('#f-first').focus(); return false; }
+      if (middle) {
+        var mp = nameProblem(middle, 'middle name');
+        if (mp) { authError('err-middle', mp); $('#f-middle').focus(); return false; }
+      }
+      var lp = nameProblem(last, 'last name');
+      if (lp) { authError('err-last', lp); $('#f-last').focus(); return false; }
+      var bp = birthdayProblem(birthday);
+      if (bp) { authError('err-birthday', bp); $('#f-birthday').focus(); return false; }
+      return true;
+    }
+
+    function details() {
+      return {
+        firstName: first,
+        middleName: middle,
+        lastName: last,
+        birthday: birthday,
+        fullName: fullNameOf(first, middle, last)
+      };
+    }
 
     /* ---- step 2 of sign-up: the emailed code ---- */
     if (auth.step === 'verify') {
@@ -3550,25 +3666,23 @@
       return;
     }
 
-    /* ---- first Google sign-in: pick a BiliLIST username ---- */
+    /* ---- first Google sign-in: confirm the BiliLIST profile ---- */
     if (auth.step === 'onboard') {
-      var onb = usernameProblem(username);
-      if (onb) { authError('err-username', onb); $('#f-username').focus(); return; }
-      completeOnboarding(username);
+      if (!validateNameFields()) return;
+      completeOnboarding(details());
       return;
     }
 
     if (!validEmail(email)) { authError('err-email'); $('#f-email').focus(); return; }
 
     if (auth.step === 'signup') {
-      var up = usernameProblem(username);
-      if (up) { authError('err-username', up); $('#f-username').focus(); return; }
+      if (!validateNameFields()) return;
 
       var sp = passwordProblems(pw);
       if (sp.length) { authError('err-pass', sp[0]); $('#f-pass').focus(); return; }
       if (pw !== pw2) { authError('err-pass2'); $('#f-pass2').focus(); return; }
 
-      signUpWithPassword(username, email, pw);
+      signUpWithPassword(details(), email, pw);
       return;
     }
 
@@ -4189,8 +4303,18 @@
   }
 
   /* =============================== INIT ================================== */
+  function setBirthdayMax() {
+    var input = $('#f-birthday');
+    if (!input) return;
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    input.max = d.getFullYear() + '-' + m + '-' + day;
+  }
+
   function init() {
     load();
+    setBirthdayMax();
 
     /* Read the OAuth result before Supabase touches the URL. An error here
        means no account was chosen, so we deliberately do not sign anyone in. */
