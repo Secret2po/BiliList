@@ -3439,7 +3439,7 @@
            not let the account in without the emailed code. */
         if (r.data.session) {
           try { S.client.auth.signOut({ scope: 'local' }).catch(function () {}); } catch (e) { /* ignore */ }
-          authNote('Email verification is required, but this Supabase project auto-confirmed the account. In Supabase → Authentication → Providers → Email, turn on “Confirm email”, then sign up again.', 'error');
+          authNote('Email verification is required, but this Supabase project auto-confirmed the account. In Supabase → Authentication → Sign In / Providers → User Signups, turn on “Confirm email”, then sign up again.', 'error');
           return;
         }
 
@@ -3447,7 +3447,7 @@
         auth.pendingEmail = email;
         setAuthStep('verify');
         $('#f-code').value = '';
-        authNote('Account created. We emailed a 6-digit code to ' + email + '. Enter it to finish signing up.', 'ok');
+        authNote('Account created. We emailed a verification message to ' + email + '. Enter the 6-digit code, or open the confirmation link in that email.', 'ok');
         $('#f-code').focus();
       }).catch(function (e) { authError('err-pass', e.message); });
     });

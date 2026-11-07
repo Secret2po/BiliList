@@ -115,8 +115,8 @@ development, or use the public URL everywhere.
 | Google button says **Continue as [Name]** | Google remembers the last account. Click the small arrow on the button to choose a different Google account. |
 | Google button is dimmed / cannot be clicked after sign-out | Hard-refresh. The latest `app.js` clears the busy state on sign-out; confirm the page loaded the current `?v=` asset. |
 | A new Google account goes straight to the dashboard | Hard-refresh to load the latest `app.js`, and re-run `supabase/schema.sql`. The onboarding step is triggered by `profiles.profile_complete = false`. |
-| Email sign-up never shows the 6-digit code | Turn on **Confirm email** in Supabase → Authentication → Providers → Email, and put `{{ .Token }}` in the **Confirm signup** template. |
-| Sign-up says email verification is required but the project auto-confirmed the account | **Confirm email** is off. Turn it on, then sign up again. |
+| Email sign-up never shows the 6-digit code | Turn on **Confirm email** in Supabase → Authentication → Sign In / Providers → **User Signups**, and put `{{ .Token }}` in the **Confirm signup** template. |
+| Sign-up says email verification is required but the project auto-confirmed the account | **Confirm email** is off. Turn it on under **Authentication → Sign In / Providers → User Signups**, then sign up again. |
 | The old `...supabase.co` name still appears | Hard-refresh the page. The primary flow should show Google's official button. If you see the green custom button, the Direct Google Sign-In script or `googleClientId` did not load, and the app is using the Supabase OAuth fallback. |
 | Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set Supabase **Site URL** to the public URL and add the public URL under **Redirect URLs**. |
 | `Invalid redirect URL` / `requested path is invalid` | The current origin is missing from Supabase **Redirect URLs**. Add it exactly. This affects email links and the fallback, not the primary Google popup. |

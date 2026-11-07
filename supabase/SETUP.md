@@ -91,10 +91,12 @@ clear it, run `localStorage.removeItem('bililist.supabase')` in the console.
 
 For the 6-digit code to arrive you need an email provider:
 
-1. Dashboard → **Authentication** → **Providers** → **Email**.
-2. Turn **Confirm email** **on**. BiliLIST treats the emailed 6-digit code as
-   part of registration: without this setting Supabase signs the account in
-   immediately, and the app refuses to continue and tells you to enable it.
+1. Dashboard → **Authentication** → **Sign In / Providers**.
+2. Find the **User Signups** section (it sits above/below the provider list,
+   not inside the Email provider dialog) and turn **Confirm email** **on**.
+   BiliLIST treats the emailed 6-digit code as part of registration: without
+   this setting Supabase signs the account in immediately, and the app refuses
+   to continue and tells you to enable it.
 3. Supabase ships with a built-in SMTP that works for a few emails a day
    (fine for a demo). For real usage, add **Resend**, **Brevo** or
    **SendGrid** under **Authentication → Emails → SMTP**.

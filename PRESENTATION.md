@@ -68,8 +68,8 @@ another network.
 | Google button says **Continue as [Name]** | Google remembers the last account. Click the small arrow on the button to choose a different Google account. |
 | Google button is dimmed / cannot be clicked after sign-out | Hard-refresh. The app now clears its busy state on sign-out; make sure the page loaded `app.js?v=6` or later. |
 | A new Google account goes straight to the dashboard | Hard-refresh to load the latest `app.js`, and re-run `supabase/schema.sql`. The onboarding step is triggered by `profiles.profile_complete = false`. |
-| Email sign-up never shows the 6-digit code | In Supabase → Authentication → Providers → Email, turn **Confirm email** on. Add `{{ .Token }}` to the **Confirm signup** template under **Authentication → Emails**. |
-| Sign-up says “Email verification is required, but this Supabase project auto-confirmed the account” | **Confirm email** is off. Turn it on, then sign up again. |
+| Email sign-up never shows the 6-digit code | In Supabase → Authentication → Sign In / Providers → **User Signups**, turn **Confirm email** on. Add `{{ .Token }}` to the **Confirm signup** template under **Authentication → Emails**. |
+| Sign-up says “Email verification is required, but this Supabase project auto-confirmed the account” | **Confirm email** is off. Turn it on under **Authentication → Sign In / Providers → User Signups**, then sign up again. |
 | Google says “Access blocked” / app not verified | In Google Cloud → OAuth consent screen, add the demo Google account as a **Test user**, or publish the app. |
 | Google returns to `localhost` or a LAN IP | This is the fallback/email flow. Set **Site URL** to `https://secret2po.github.io/BiliList/` and add that URL under **Redirect URLs**. See [`DEPLOY.md`](DEPLOY.md). |
 | Google fallback fails with “redirect” / “invalid request” | The public origin is missing from **Supabase → Authentication → URL Configuration → Redirect URLs**. Add `https://secret2po.github.io/BiliList/**`. |
