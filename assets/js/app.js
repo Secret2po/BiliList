@@ -2713,10 +2713,23 @@
      account also works with the normal email form. */
   var auth = {
     step: 'signin',
-    purpose: 'signup',      /* signup | recovery */
+    purpose: 'signup',      /* signup | recovery | google */
     pendingEmail: '',
     user: null
   };
+
+  /* while a Google account awaits its emailed code, this marker parks the
+     session: no path into the app until the code (or the emailed link) lands */
+  var VERIFY_KEY = 'bililist.pendingVerify';
+  function readPendingVerify() {
+    try { return sessionStorage.getItem(VERIFY_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setPendingVerify(email) {
+    try {
+      if (email) sessionStorage.setItem(VERIFY_KEY, String(email).toLowerCase());
+      else sessionStorage.removeItem(VERIFY_KEY);
+    } catch (e) { /* private browsing: the in-memory flow still works */ }
+  }
 
   function showLogin() {
     setGoogleBusy(false);
@@ -2813,7 +2826,9 @@
       heading.textContent = auth.purpose === 'recovery' ? 'Reset your password' : 'Verify your email';
       sub.textContent = auth.purpose === 'recovery'
         ? 'Enter the code we emailed you, then choose a new password.'
-        : 'One last step — enter the code we emailed you to confirm your account.';
+        : auth.purpose === 'google'
+          ? 'One last step — we emailed a code to prove this inbox is yours. Enter it below to open BiliLIST.'
+          : 'One last step — enter the code we emailed you to confirm your account.';
       btn.querySelector('span').textContent = auth.purpose === 'recovery' ? 'Continue' : 'Verify email';
       $('#code-hint').textContent = auth.pendingEmail
         ? 'We sent a 6-digit code to ' + auth.pendingEmail
@@ -2950,9 +2965,42 @@
       .trim();
   }
 
+  /* After the Google password step, prove the inbox with a real emailed
+     code. The session that Google handed over is dropped on purpose: kept
+     alive, a page reload would restore it and the step could be skipped. */
+  function startGoogleVerify(user) {
+    var email = (user && user.email) || '';
+
+    var btn = $('#btn-login');
+    if (btn) btn.disabled = false;
+
+    auth.purpose = 'google';
+    auth.pendingEmail = email;
+    auth.user = user || null;
+    setPendingVerify(email);
+    setOAuthPending(false);
+    showLogin();
+    setAuthStep('verify');
+    $('#f-code').value = '';
+    $('#f-code').focus();
+
+    if (!S.client) return;
+
+    /* dropped before sending: even if the email fails, no session survives */
+    S.client.auth.signOut({ scope: 'local' }).catch(function () {});
+    S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false } })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        authNote('Your account is created. A 6-digit code was sent to ' + email + ' — enter it above.', 'ok');
+      })
+      .catch(function (e) {
+        authNote('Your account was created, but the verification email could not be sent (' + e.message + '). Use "Resend code" below.', 'error');
+      });
+  }
+
   /* Finish a Google sign-up: save the confirmed name and optional birthday,
      set the password the person just chose (so the account also works on the
-     email form), mark the profile complete, then enter the app. */
+     email form), mark the profile complete, then ask for the emailed code. */
   function completeOnboarding(details, pw) {
     if (!S.client || !auth.user) {
       authNote('Your session expired. Please sign in with Google again.', 'error');
@@ -2994,8 +3042,9 @@
         for (var k in meta) user.user_metadata[k] = meta[k];
         auth.user = user;
 
-        if (btn) btn.disabled = false;
-        onSignedIn(user, { google: true });
+        /* The account exists, but the inbox still has to be proven with the
+           emailed code before any path leads into the app. */
+        startGoogleVerify(user);
       }).catch(function (e) {
         if (btn) btn.disabled = false;
         var m = (e && e.message) || 'Could not create your account. Please try again.';
@@ -3333,9 +3382,16 @@
     if (!email) return;
     if (!S.client) { authNote('Demo mode — no email was sent.', 'info'); return; }
 
-    var req = auth.purpose === 'recovery'
-      ? S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
-      : S.client.auth.resend({ type: 'signup', email: email });
+    var req;
+    /* an OAuth account has no signUp OTP to replay, so its resend also goes
+       through signInWithOtp */
+    if (auth.purpose === 'google') {
+      req = S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false } });
+    } else if (auth.purpose === 'recovery') {
+      req = S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() });
+    } else {
+      req = S.client.auth.resend({ type: 'signup', email: email });
+    }
 
     req.then(function (r) {
       if (r && r.error) { authNote('We could not send a new code: ' + r.error.message, 'error'); return; }
@@ -3346,7 +3402,11 @@
   function verifyCode(email, token) {
     if (!S.client) { signInDemo(); return; }
 
-    var type = auth.purpose === 'recovery' ? 'recovery' : 'signup';
+    /* signUp codes check as "signup"; the OTP emailed for a Google account
+       (auth.signInWithOtp) checks as "magiclink". */
+    var type = auth.purpose === 'recovery' ? 'recovery'
+             : auth.purpose === 'google' ? 'magiclink'
+             : 'signup';
 
     S.client.auth.verifyOtp({ email: email, token: token, type: type })
       .then(function (r) {
@@ -3369,6 +3429,8 @@
           return;
         }
 
+        /* only a checked code releases the parking marker */
+        if (auth.purpose === 'google') setPendingVerify('');
         routeAfterAuth(r.data.user);
       }).catch(function (e) { authError('err-code', e.message); });
   }
@@ -3532,6 +3594,23 @@
 
   function routeAfterAuth(user, opts) {
     opts = opts || {};
+
+    /* A Google account that just created its password must first enter the
+       emailed code. The marker survives reloads, so the restored session —
+       or signing in with Google again — can never bypass the check. */
+    var pendingVerify = readPendingVerify();
+    if (user && pendingVerify && pendingVerify === String(user.email || '').toLowerCase()) {
+      state.signedIn = false;
+      setOAuthPending(false);
+      auth.purpose = 'google';
+      auth.pendingEmail = user.email;
+      auth.user = user;
+      showLogin();
+      setAuthStep('verify');
+      $('#f-code').value = '';
+      $('#f-code').focus();
+      return Promise.resolve();
+    }
 
     /* E-mail accounts must confirm their address before they can enter. */
     var provider = (user && user.app_metadata && user.app_metadata.provider) || '';

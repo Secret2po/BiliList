@@ -1,0 +1,73 @@
+<!--
+  BiliLIST — "Magic Link" email template
+  Paste into: Supabase dashboard → Authentication → Emails → Templates →
+  "Magic Link" → Source code → replace everything → Save.
+  This template is also used for the codes sent by auth.signInWithOtp()
+  (the Google sign-up verification step), so it must keep {{ .Token }}.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your BiliLIST sign-in code</title>
+</head>
+<body style="margin:0;padding:0;background:#f2eee2;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2eee2;padding:28px 12px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;">
+
+        <!-- banner -->
+        <tr>
+          <td style="background:#1b6b3a;padding:28px 32px;">
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:bold;color:#ffffff;letter-spacing:1px;">BiliLIST</div>
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#d6e8d6;margin-top:4px;">Make a list. Share the load. Live lighter.</div>
+          </td>
+        </tr>
+
+        <!-- body -->
+        <tr>
+          <td style="padding:32px;font-family:Arial,Helvetica,sans-serif;color:#2c3527;font-size:15px;line-height:1.6;">
+            <p style="margin:0 0 16px;">Hi there,</p>
+            <p style="margin:0 0 16px;">This address was just used to create a BiliLIST account. Enter this code in the app to prove the inbox is yours:</p>
+
+            <!-- the 6-digit code the verify screen asks for -->
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;width:100%;">
+              <tr>
+                <td style="padding:18px;text-align:center;background:#faf6ec;border:1px solid #e5dfc9;border-radius:8px;">
+                  <div style="font-family:Arial,Helvetica,sans-serif;font-size:30px;font-weight:bold;letter-spacing:8px;color:#1b6b3a;">{{ .Token }}</div>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 16px;">You can also click the button instead of typing the code:</p>
+            <p style="margin:0 0 16px;">
+              <a href="{{ .ConfirmationURL }}"
+                 style="background:#1b6b3a;color:#ffffff;text-decoration:none;padding:14px 30px;border-radius:8px;font-weight:bold;font-size:16px;display:inline-block;">Verify and Sign In</a>
+            </p>
+            <p style="margin:0 0 16px;">The code and link work only once and expire in <b>1 hour</b>.</p>
+
+            <p style="margin:0 0 6px;font-size:13px;color:#6b7263;">If the button will not click, paste this into your browser:</p>
+            <p style="margin:0 0 18px;font-size:12px;word-break:break-all;color:#8a8f7f;">{{ .ConfirmationURL }}</p>
+            <p style="margin:0;font-size:13px;color:#6b7263;">If you did not just create a BiliLIST account, you can safely ignore this email — nothing is activated unless you enter the code.</p>
+          </td>
+        </tr>
+
+        <!-- footer -->
+        <tr>
+          <td style="padding:18px 32px;background:#faf6ec;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8a8f7f;">
+            Happy shopping,<br>
+            <b style="color:#2c3527;">The BiliLIST team</b>
+            <div style="margin-top:6px;">Delivery tip: add this sender to your contacts so future BiliLIST emails always reach your inbox.</div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>
