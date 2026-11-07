@@ -2705,10 +2705,12 @@
   /* =============================== AUTH ================================== */
   var S = window.BiliSupabase || { client: null, isConfigured: false, mode: 'demo' };
 
-  /* step: signin | signup | verify | newpass | onboard
+  /* step: signin | signup | verify | newpass | onboard | onboard-pass
      "verify" is not a tab — it is the email-confirmation step that follows a
-     sign-up, and also the step used by "Forgot password?". "onboard" is the
-     extra profile step for a Google account that has not completed BiliLIST. */
+     sign-up, and also the step used by "Forgot password?". "onboard" and
+     "onboard-pass" are the two steps for a Google account that has not
+     completed BiliLIST: confirm the name, then choose a password so the
+     account also works with the normal email form. */
   var auth = {
     step: 'signin',
     purpose: 'signup',      /* signup | recovery */
@@ -2750,11 +2752,12 @@
     var isVerify = step === 'verify';
     var isNewPass = step === 'newpass';
     var isOnboard = step === 'onboard';
+    var isOnboardPass = step === 'onboard-pass';
 
     /* Google and the email form share the entry point; the verification,
        reset and Google-onboarding steps do not need the Google button. */
     var googleWrap = $('#google-auth');
-    if (googleWrap) googleWrap.hidden = isVerify || isNewPass || isOnboard;
+    if (googleWrap) googleWrap.hidden = isVerify || isNewPass || isOnboard || isOnboardPass;
 
     var orLine = $('.or-line');
     if (orLine) orLine.textContent = isSignup ? 'or sign up with email' : 'or log in with email';
@@ -2763,7 +2766,7 @@
     var topLabel = $('#login-top-label');
     var topSignup = $('#link-signup-top');
     var topSignin = $('#link-signin-top');
-    if (isOnboard) {
+    if (isOnboard || isOnboardPass) {
       if (topLabel) topLabel.textContent = 'Signed in with Google';
       if (topSignup) topSignup.hidden = true;
       if (topSignin) topSignin.hidden = true;
@@ -2783,7 +2786,7 @@
     $('#field-last').hidden = !showNames;
     $('#field-birthday').hidden = !showNames;
     $('#field-password').hidden = isVerify || isOnboard;
-    $('#field-confirm').hidden = !(isSignup || isNewPass);
+    $('#field-confirm').hidden = !(isSignup || isNewPass || isOnboardPass);
     $('#field-code').hidden = !isVerify;
     $('#row-remember').hidden = !isSignin;
 
@@ -2818,8 +2821,19 @@
       $('#auth-secondary').innerHTML = '<span>Changed your mind?</span> <a class="link-green" href="#" id="link-signin">Back to sign in</a>';
     } else if (isOnboard) {
       heading.textContent = 'Create your BiliLIST account';
-      sub.textContent = 'Confirm your name and add an optional birthday to finish setting up your Google account.';
+      sub.textContent = 'Confirm your name and add an optional birthday. You will choose a password on the next step.';
+      btn.querySelector('span').textContent = 'Continue';
+      $('#auth-secondary').innerHTML = '<span>Not you?</span> <a class="link-green" href="#" id="link-cancel-onboard">Sign out</a>';
+    } else if (isOnboardPass) {
+      var emi = $('#f-email').value;
+      heading.textContent = 'Create your password';
+      sub.textContent = emi
+        ? 'Choose a password so you can also log in with ' + emi + ' and the email form.'
+        : 'Choose a password so you can also log in with the email form.';
       btn.querySelector('span').textContent = 'Create account';
+      label.textContent = 'Password';
+      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      $('#f-pass').placeholder = 'At least 8 characters';
       $('#auth-secondary').innerHTML = '<span>Not you?</span> <a class="link-green" href="#" id="link-cancel-onboard">Sign out</a>';
     } else {
       heading.textContent = 'Set a new password';
@@ -2832,7 +2846,7 @@
 
     /* the email is locked while a code is outstanding */
     var em = $('#f-email');
-    var locked = isVerify || isNewPass || isOnboard;
+    var locked = isVerify || isNewPass || isOnboard || isOnboardPass;
     em.readOnly = locked;
     $('#field-email').classList.toggle('is-readonly', locked);
 
@@ -2937,8 +2951,9 @@
   }
 
   /* Finish a Google sign-up: save the confirmed name and optional birthday,
-     mark the profile complete, then enter the app. */
-  function completeOnboarding(details) {
+     set the password the person just chose (so the account also works on the
+     email form), mark the profile complete, then enter the app. */
+  function completeOnboarding(details, pw) {
     if (!S.client || !auth.user) {
       authNote('Your session expired. Please sign in with Google again.', 'error');
       return;
@@ -2947,6 +2962,14 @@
     var btn = $('#btn-login');
     if (btn) btn.disabled = true;
     authNote('Creating your BiliLIST account…', 'info');
+
+    var meta = {
+      first_name: details.firstName,
+      middle_name: details.middleName || '',
+      last_name: details.lastName,
+      full_name: details.fullName,
+      birthday: details.birthday || null
+    };
 
     S.client.from('profiles')
       .update({
@@ -2959,29 +2982,17 @@
       .then(function (r) {
         if (r && r.error) throw r.error;
         if (!r || !r.data) throw new Error('Could not save your details. Please try again.');
+        /* The password turns a Google-only account into one that can also use
+           the email login form, so a failure must not be swallowed here. */
+        return S.client.auth.updateUser({ password: pw, data: meta });
+      })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
 
         var user = auth.user;
         user.user_metadata = user.user_metadata || {};
-        user.user_metadata.first_name = details.firstName;
-        user.user_metadata.middle_name = details.middleName || '';
-        user.user_metadata.last_name = details.lastName;
-        user.user_metadata.full_name = details.fullName;
-        user.user_metadata.birthday = details.birthday || null;
+        for (var k in meta) user.user_metadata[k] = meta[k];
         auth.user = user;
-
-        /* Keep the details available on the next page load. The profile row
-           is the source of truth; this metadata update is best-effort. */
-        try {
-          S.client.auth.updateUser({
-            data: {
-              first_name: details.firstName,
-              middle_name: details.middleName || '',
-              last_name: details.lastName,
-              full_name: details.fullName,
-              birthday: details.birthday || null
-            }
-          }).catch(function () { /* ignore */ });
-        } catch (e) { /* ignore */ }
 
         if (btn) btn.disabled = false;
         onSignedIn(user, { google: true });
@@ -2993,8 +3004,8 @@
         }
         var note = $('#auth-note');
         if (note) { note.hidden = true; note.textContent = ''; note.className = 'auth-note'; }
-        authError('err-first', m);
-        $('#f-first').focus();
+        authError('err-pass', m);
+        $('#f-pass').focus();
       });
   }
 
@@ -3598,8 +3609,8 @@
 
     authNote(
       email
-        ? 'Signed in with Google as ' + email + '. Confirm your name and add an optional birthday to create your BiliLIST account.'
-        : 'Confirm your name and add an optional birthday to create your BiliLIST account.',
+        ? 'Signed in with Google as ' + email + '. Confirm your name, then choose a password to create your BiliLIST account.'
+        : 'Confirm your name, then choose a password to create your BiliLIST account.',
       'info'
     );
 
@@ -3669,7 +3680,18 @@
     /* ---- first Google sign-in: confirm the BiliLIST profile ---- */
     if (auth.step === 'onboard') {
       if (!validateNameFields()) return;
-      completeOnboarding(details());
+      /* field values stay in the DOM, so details() still reads them later */
+      setAuthStep('onboard-pass');
+      authNote('One more step — choose a password for ' + ($('#f-email').value || 'your email') + '.', 'info');
+      return;
+    }
+
+    /* ---- second step of Google onboarding: the password ---- */
+    if (auth.step === 'onboard-pass') {
+      var op = passwordProblems(pw);
+      if (op.length) { authError('err-pass', op[0]); $('#f-pass').focus(); return; }
+      if (pw !== pw2) { authError('err-pass2'); $('#f-pass2').focus(); return; }
+      completeOnboarding(details(), pw);
       return;
     }
 
