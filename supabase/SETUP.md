@@ -97,9 +97,31 @@ For the 6-digit code to arrive you need an email provider:
    BiliLIST treats the emailed 6-digit code as part of registration: without
    this setting Supabase signs the account in immediately, and the app refuses
    to continue and tells you to enable it.
-3. Supabase ships with a built-in SMTP that works for a few emails a day
-   (fine for a demo). For real usage, add **Resend**, **Brevo** or
-   **SendGrid** under **Authentication → Emails → SMTP**.
+3. **Send the code with Supabase's built-in email service.** It needs no SMTP
+   keys and no Brevo login, and the app is already wired for it.
+
+   Dashboard -> **Authentication -> Emails**. A **custom SMTP** completely
+   replaces the built-in service, and a half-configured one is the usual reason
+   codes never arrive. If Brevo (or Resend / SendGrid) is saved here but was
+   never fully verified, untick **"Enable custom SMTP"** and press **Save**.
+   The built-in service takes over immediately - it sends a handful of emails
+   a day, which is enough for a class demo.
+
+   The app itself does not speak to Brevo or any mail provider; only Supabase
+   does. So if the code is not arriving, the fix lives here in the dashboard,
+   not in BiliLIST's code.
+
+   Signs the custom SMTP is the culprit rather than the app: the sign-up screen
+   replies with an error about generating or sending the confirmation email;
+   **Dashboard -> Logs -> Auth** shows the send failing; or no code arrives at
+   all while other accounts still register unusually often (a rate limit, not
+   a config error).
+
+   If you later want more volume than the built-in service allows, Resend is
+   the least fussy option: one API key and one DNS verification, no sender
+   whitelist, then re-enable the custom SMTP with it.
+
+
 4. Under **Authentication → URL Configuration**, set **Site URL** to your
    public URL (`https://secret2po.github.io/BiliList/`, see
    [`../DEPLOY.md`](../DEPLOY.md)) and add
