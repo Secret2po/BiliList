@@ -371,6 +371,45 @@
     { name: 'Baking soda',          cat: 'household', n: 1,  u: 'box',    alt: 'bicarbonate' }
   ];
 
+  /* =============================================== STARTER DASHBOARD ===== */
+  /* A brand-new household should never land on an empty page. The app builds
+     fresh ids and dates from this blueprint (see starterList / starterPantry
+     in app.js), so the screen looks alive on the first sign-in while the
+     dates always stay relative to today. Everything here is sample data the
+     account can edit or delete. */
+  var STARTER = {
+    listName: 'The weekly shop',
+    items: [
+      { name: 'Well-milled rice',   cat: 'grains',   n: 5,   u: 'kg' },
+      { name: 'Eggs',               cat: 'dairy',    n: 1,   u: 'tray' },
+      { name: 'Fresh milk',         cat: 'dairy',    n: 1,   u: 'L' },
+      { name: 'Bananas',            cat: 'produce',  n: 1,   u: 'bunch' },
+      { name: 'Tomatoes',           cat: 'produce',  n: 500, u: 'g' },
+      { name: 'Dishwashing liquid', cat: 'cleaning', n: 1,   u: 'bottle' },
+      { name: 'Laundry detergent',  cat: 'cleaning', n: 1,   u: 'pouch' }
+    ],
+    pantry: [
+      { name: 'Cooking oil',   cat: 'condiments', n: 1,   u: 'bottle', expiry: 'Good for 2 months', level: 'full' },
+      { name: 'Soy sauce',     cat: 'condiments', n: 1,   u: 'bottle', expiry: 'Good for 6 months', level: 'full' },
+      { name: 'Garlic',        cat: 'produce',    n: 250, u: 'g',      expiry: 'Running low',       level: 'low'  },
+      { name: 'Instant coffee',cat: 'beverages',  n: 100, u: 'g',      expiry: 'Good for 1 month',  level: 'full' }
+    ],
+    lifeAdmin: [
+      { name: 'Pay the water bill',    when: 'Due Friday' },
+      { name: 'Book the barangay hall',when: 'Next week'  },
+      { name: 'Renew PhilHealth',      when: 'This month' }
+    ],
+    events: [
+      { title: 'Weekly grocery run',  kind: 'list',  time: '8:00 AM', chip: 'The weekly shop', dayOffset: 1, listLink: true },
+      { title: 'Pay the water bill',  kind: 'event', time: '5:00 PM', chip: 'Reminder',        dayOffset: 3 },
+      { title: "Mang Ramon's birthday", kind: 'event', time: 'All day', chip: 'Family',        dayOffset: 9 }
+    ],
+    activity: [
+      { text: 'started the weekly shop', when: 'Just now' },
+      { text: 'set up your household',   when: 'Today'    }
+    ]
+  };
+
   /* Populated from what the account actually checks off. */
   var HISTORY = [];
 
@@ -388,6 +427,7 @@
     activity: ACTIVITY,
     spending: SPENDING,
     categories: CATEGORIES,
+    starter: STARTER,
     units: UNITS,
     catalogue: CATALOGUE,
     history: HISTORY

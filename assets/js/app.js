@@ -10,6 +10,8 @@
   var OAUTH_PENDING_KEY = 'bililist.oauth.pending';
   var UI_KEY = 'bililist.ui.v1';
   var MIGRATE_KEY = 'bililist.migrated.';
+  var GUIDE_KEY = 'bililist.guide.v1';
+  var STARTER_KEY = 'bililist.starter.';
 
   /* When a Supabase session is active, this is the source of truth. The
      localStorage prototype state is only used for demo / offline mode. */
@@ -81,7 +83,9 @@
     addQty: { n: 1, u: 'pcs' },
     addQtyTouched: false,
     editUnit: 'pcs',
-    listQuery: '',
+    searchQuery: '',
+    highlightId: null,
+    guideDismissed: false,
     addModal: { open: false, step: 'search', query: '', draft: null },
     editingId: null,
     catPanelOpen: false,
@@ -110,6 +114,8 @@
      greeting are all derived from whoever is signed in. */
   function applyUser(user) {
     state.user = user || null;
+    state.searchQuery = '';
+    state.highlightId = null;
 
     var email = (user && user.email) || '';
     var meta = (user && user.user_metadata) || {};
@@ -134,27 +140,99 @@
       active: true
     }];
 
-    ensureStarterState();
+    /* Signed-in accounts get their list from the cloud snapshot. Only demo /
+       offline mode seeds a local draft, otherwise the import step would see
+       it as data worth migrating into Supabase. */
+    if (!S || !S.client) ensureStarterState();
   }
 
-  /* everybody needs at least one list to land on */
+  /* everybody needs at least one list to land on, and a brand-new household
+     should see how the dashboard works instead of an empty page */
   function ensureStarterState() {
     if (!state.lists.length) {
-      state.lists = [{
-        id: 'l1',
-        name: 'My first list',
-        kind: 'grocery',
-        icon: 'cart',
-        tint: 'green',
-        shared: true,
-        items: []
-      }];
+      state.lists = [starterList()];
+      if (!state.inventory.length) state.inventory = starterPantry();
     }
     var found = false;
     for (var i = 0; i < state.lists.length; i++) {
       if (state.lists[i].id === state.activeListId) found = true;
     }
     if (!found) state.activeListId = state.lists[0].id;
+    seedDashboardSamples();
+  }
+
+  /* the starter shop is built from D.starter so dates and ids stay fresh */
+  function starterList() {
+    var owner = (state.members.filter(function (m) { return m.you; })[0] || state.members[0] || { id: 'me' }).id;
+    return {
+      id: 'l1',
+      name: D.starter.listName,
+      kind: 'grocery',
+      icon: 'cart',
+      tint: 'green',
+      shared: true,
+      items: D.starter.items.map(function (it, i) {
+        return {
+          id: 'l1i' + (i + 1),
+          name: it.name,
+          qty: { n: it.n, u: it.u },
+          cat: it.cat,
+          aisle: catName(it.cat),
+          owner: owner,
+          done: false,
+          pantryAdded: null
+        };
+      })
+    };
+  }
+
+  function starterPantry() {
+    return D.starter.pantry.map(function (p, i) {
+      return {
+        id: 'inv-s' + (i + 1),
+        name: p.name,
+        qty: { n: p.n, u: p.u },
+        cat: p.cat,
+        expiry: p.expiry || 'On the shelf',
+        level: p.level || 'full'
+      };
+    });
+  }
+
+  /* life admin, events and activity are dashboard context, so keep them
+     populated even when the cloud workspace only stores lists and items */
+  function seedDashboardSamples() {
+    var me = you();
+    if (!state.lifeAdmin.length) {
+      state.lifeAdmin = D.starter.lifeAdmin.map(function (t, i) {
+        return { id: 'life-s' + (i + 1), name: t.name, when: t.when, done: false, owner: me.id };
+      });
+    }
+    if (!state.events.length) {
+      var linkedList = state.lists[0] ? state.lists[0].id : null;
+      state.events = D.starter.events.map(function (e, i) {
+        return {
+          id: 'ev-s' + (i + 1),
+          title: e.title,
+          date: D.iso(D.dayOffset(e.dayOffset)),
+          time: e.time,
+          chip: e.chip,
+          kind: e.kind,
+          listId: e.listLink ? linkedList : null
+        };
+      });
+    }
+    if (!state.activity.length) {
+      state.activity = D.starter.activity.map(function (a, i) {
+        return {
+          id: 'act-s' + (i + 1),
+          who: i === 0 ? me.name.split(' ')[0] : 'BiliLIST',
+          initials: i === 0 ? me.initials : 'BL',
+          text: a.text,
+          when: a.when
+        };
+      });
+    }
   }
 
   function you() {
@@ -390,6 +468,10 @@
     } catch (e) { return {}; }
   }
 
+  function readGuideDismissed() {
+    try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch (e) { return false; }
+  }
+
   function saveUiState() {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({
@@ -467,6 +549,7 @@
   function resetDemo() {
     localStorage.removeItem(STORE_KEY);
     localStorage.removeItem(UI_KEY);
+    localStorage.removeItem(GUIDE_KEY);
     location.reload();
   }
 
@@ -670,6 +753,74 @@
           });
         });
       });
+    });
+  }
+
+  /* -------------------------------------------------- cloud starter data */
+  /* A brand-new workspace can still arrive empty: the database only seeds
+     categories and one list. Fill it once with the same starter shop the
+     demo uses, then read a fresh snapshot so the dashboard is populated. */
+  function starterSeeded(workspaceId) {
+    try { return localStorage.getItem(STARTER_KEY + workspaceId) === '1'; } catch (e) { return false; }
+  }
+
+  function markStarterSeeded(workspaceId) {
+    try { localStorage.setItem(STARTER_KEY + workspaceId, '1'); } catch (e) { /* ignore */ }
+  }
+
+  function cloudCategoryId(slug, categories) {
+    var name = localCategoryName(slug);
+    var other = null;
+    for (var i = 0; i < categories.length; i++) {
+      var cn = String(categories[i].name || '').toLowerCase();
+      if (name && cn === name.toLowerCase()) return categories[i].id;
+      if (cn === 'other') other = categories[i].id;
+    }
+    return other;
+  }
+
+  function seedCloudStarter(snapshot) {
+    if (!snapshot || !snapshot.workspace || !snapshot.lists.length) return Promise.resolve(snapshot);
+    if (snapshot.items.length || snapshot.pantry.length) return Promise.resolve(snapshot);
+
+    var workspaceId = snapshot.workspace.id;
+    if (starterSeeded(workspaceId)) return Promise.resolve(snapshot);
+
+    var list = snapshot.lists[0];
+    var items = D.starter.items.map(function (it) {
+      return {
+        list_id: list.id,
+        name: it.name,
+        category_id: cloudCategoryId(it.cat, snapshot.categories),
+        qty_amount: it.n,
+        qty_unit: it.u,
+        done: false,
+        assigned_to: cloud.userId
+      };
+    });
+    var pantry = D.starter.pantry.map(function (p) {
+      return {
+        workspace_id: workspaceId,
+        name: p.name,
+        category_id: cloudCategoryId(p.cat, snapshot.categories),
+        qty_amount: p.n,
+        qty_unit: p.u,
+        expiry: p.expiry || 'On the shelf',
+        level: p.level || 'full'
+      };
+    });
+
+    return S.client.from('items').insert(items).then(function (r) {
+      if (r.error) throw r.error;
+      return S.client.from('pantry').insert(pantry);
+    }).then(function (r) {
+      if (r.error) throw r.error;
+      markStarterSeeded(workspaceId);
+      return fetchCloudSnapshot(null, snapshot.workspace);
+    }).catch(function (err) {
+      console.warn('Starter dashboard content skipped', err);
+      /* some rows may have landed before the error; show whatever is there */
+      return fetchCloudSnapshot(null, snapshot.workspace).catch(function () { return snapshot; });
     });
   }
 
@@ -904,6 +1055,9 @@
       return maybeMigrateLocal(user, snapshot).then(function (migrated) {
         return migrated ? fetchCloudSnapshot(user) : snapshot;
       });
+    }).then(function (snapshot) {
+      /* only after migration, so real imported data always wins */
+      return seedCloudStarter(snapshot);
     }).then(function (snapshot) {
       applyCloudSnapshot(snapshot);
       cloud.loading = false;
@@ -1331,6 +1485,118 @@
     return next;
   }
 
+  /* ================================ SEARCH =============================== */
+  /* The top search looks through every list plus the pantry. It also filters
+     the open list card, so typing never feels detached from the page. */
+  function itemMatchesQuery(it, q) {
+    if (!q) return true;
+    return String(it.name || '').toLowerCase().indexOf(q) !== -1 ||
+           qtyText(it.qty).toLowerCase().indexOf(q) !== -1;
+  }
+
+  function searchMatches(q) {
+    var query = String(q || '').trim().toLowerCase();
+    var hits = { lists: [], pantry: [] };
+    if (!query) return hits;
+    state.lists.forEach(function (l) {
+      l.items.forEach(function (it) {
+        if (itemMatchesQuery(it, query)) hits.lists.push({ list: l, item: it });
+      });
+    });
+    state.inventory.forEach(function (p) {
+      if (itemMatchesQuery(p, query)) hits.pantry.push(p);
+    });
+    return hits;
+  }
+
+  function searchResultHtml() {
+    var raw = state.searchQuery.trim();
+    if (!raw) return '';
+    var hits = searchMatches(raw);
+    var total = hits.lists.length + hits.pantry.length;
+
+    var html = '<div class="search-panel-head">' +
+      '<span>' + (total
+        ? '<b>' + total + '</b> match' + (total === 1 ? '' : 'es') + ' for “' + esc(raw) + '”'
+        : 'Nothing matches “' + esc(raw) + '” yet') + '</span>' +
+      '<button class="search-add" data-act="add-named" data-name="' + esc(raw) + '">' +
+        icon('plus') + 'Add “' + esc(raw) + '”</button>' +
+    '</div>';
+
+    if (hits.lists.length) {
+      html += '<div class="search-group">' +
+        '<div class="search-group-title">On your lists</div>' +
+        hits.lists.slice(0, 6).map(function (row) {
+          var it = row.item;
+          return '<button class="search-result" data-act="goto-item" data-goto-list="' + esc(row.list.id) + '" data-goto-item="' + esc(it.id) + '" data-goto-tab="' + (it.done ? 'pantry' : 'tobuy') + '">' +
+            '<span class="sr-ico' + (it.done ? ' is-done' : '') + '">' + icon(it.done ? 'check-thin' : 'cart') + '</span>' +
+            '<span class="sr-main">' +
+              '<span class="sr-name">' + esc(it.name) + '</span>' +
+              '<span class="sr-sub">' + esc(qtyText(it.qty)) + ' · ' + esc(row.list.name) + '</span>' +
+            '</span>' +
+            '<span class="sr-state' + (it.done ? ' is-done' : '') + '">' + (it.done ? 'Bought' : 'To buy') + '</span>' +
+          '</button>';
+        }).join('') +
+        (hits.lists.length > 6 ? '<div class="search-more">+' + (hits.lists.length - 6) + ' more on your lists</div>' : '') +
+      '</div>';
+    }
+
+    if (hits.pantry.length) {
+      html += '<div class="search-group">' +
+        '<div class="search-group-title">In the pantry &amp; inventory</div>' +
+        hits.pantry.slice(0, 4).map(function (p) {
+          return '<button class="search-result" data-act="goto-pantry" data-goto-item="' + esc(p.id) + '">' +
+            '<span class="sr-ico is-done">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
+            '<span class="sr-main">' +
+              '<span class="sr-name">' + esc(p.name) + '</span>' +
+              '<span class="sr-sub">' + esc(qtyText(p.qty)) + ' · ' + esc(p.expiry || 'On the shelf') + '</span>' +
+            '</span>' +
+            '<span class="sr-state' + (p.level === 'low' ? ' is-low' : '') + '">' + (p.level === 'low' ? 'Running low' : 'In stock') + '</span>' +
+          '</button>';
+        }).join('') +
+        (hits.pantry.length > 4 ? '<div class="search-more">+' + (hits.pantry.length - 4) + ' more in the pantry</div>' : '') +
+      '</div>';
+    }
+
+    return html;
+  }
+
+  function renderSearch() {
+    var input = $('#global-search');
+    var panel = $('#search-results');
+    if (!input || !panel) return;
+
+    if (input.value !== state.searchQuery) input.value = state.searchQuery;
+    var q = state.searchQuery.trim();
+    var clear = $('#search-clear');
+    if (clear) clear.hidden = !q;
+
+    if (!q) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      input.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    panel.innerHTML = searchResultHtml();
+    panel.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+
+  function focusFound(id) {
+    if (!id) return;
+    setTimeout(function () {
+      var node = document.querySelector('.item-row[data-id="' + id + '"], .inv-row[data-inv="' + id + '"]');
+      if (!node) return;
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(function () {
+        node.classList.remove('is-found');
+        /* drop the flag too, so re-rendering does not re-highlight forever */
+        if (state.highlightId === id) state.highlightId = null;
+      }, 2200);
+    }, 90);
+  }
+
   /* =============================== DASHBOARD ============================= */
   function activeList() {
     for (var i = 0; i < state.lists.length; i++) if (state.lists[i].id === state.activeListId) return state.lists[i];
@@ -1446,7 +1712,8 @@
   function itemRow(it) {
     var m = memberById(it.owner);
     var open = state.editingId === it.id;
-    return '<div class="item-row' + (it.done ? ' done' : '') + (open ? ' is-open' : '') + '" data-id="' + it.id + '">' +
+    var hit = state.highlightId === it.id;
+    return '<div class="item-row' + (it.done ? ' done' : '') + (open ? ' is-open' : '') + (hit ? ' is-found' : '') + '" data-id="' + it.id + '">' +
       '<button class="tick' + (it.done ? ' on' : '') + '" data-act="toggle" aria-label="Toggle ' + esc(it.name) + '">' + icon('check') + '</button>' +
       '<span class="item-name">' + esc(it.name) + '</span>' +
       '<span class="item-qty">' + esc(qtyText(it.qty)) + '</span>' +
@@ -1648,12 +1915,17 @@
   /* ---------------------------------------------------------- pantry */
   /* The "Pantry & Inventory" tab is the household inventory: what is already
      on the shelves. Checking an item off in To Buy tops it up. */
-  function inventoryRows() {
-    if (!state.inventory.length) {
-      return '<div class="empty-state">Nothing in the pantry yet.<br>Check items off your list and they will land here.</div>';
+  function inventoryRows(filtered) {
+    var rows = filtered || state.inventory;
+    if (!rows.length) {
+      return '<div class="empty-state">' +
+        (state.searchQuery.trim()
+          ? 'Nothing in the pantry matches “' + esc(state.searchQuery.trim()) + '”.'
+          : 'Nothing in the pantry yet.<br>Check items off your list and they will land here.') +
+      '</div>';
     }
-    return state.inventory.map(function (p) {
-      return '<div class="inv-row">' +
+    return rows.map(function (p) {
+      return '<div class="inv-row' + (state.highlightId === p.id ? ' is-found' : '') + '" data-inv="' + esc(p.id) + '">' +
         '<span class="inv-ico' + (p.level === 'low' ? ' is-low' : '') + '">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
         '<span class="inv-name">' + esc(p.name) + '</span>' +
         '<span class="inv-qty">' + esc(qtyText(p.qty)) + '</span>' +
@@ -1715,16 +1987,11 @@
     var total = all.length;
     var pct = total ? Math.round((done / total) * 100) : 0;
 
-    /* the find-in-list search only filters what is already on the list,
-       and it looks across every tab */
-    var q = state.listQuery.trim().toLowerCase();
-    var matches = function (it) {
-      if (!q) return true;
-      /* name and quantity only — matching the category name gave false
-         positives (searching "egg" matched everything in "Dairy & eggs") */
-      return it.name.toLowerCase().indexOf(q) !== -1 ||
-             qtyText(it.qty).toLowerCase().indexOf(q) !== -1;
-    };
+    /* the top search filters this list too, across every tab. Name and
+       quantity only — matching the category name gave false positives
+       (searching "egg" matched everything in "Dairy & eggs"). */
+    var q = state.searchQuery.trim().toLowerCase();
+    var matches = function (it) { return itemMatchesQuery(it, q); };
 
     /* if the active tab has no hits but another tab does, jump there */
     if (q) {
@@ -1742,9 +2009,13 @@
 
     var body = '';
     var shown = 0;
+    var shownTotal = total;
     if (tab === 'inventory') {
+      var invItems = state.inventory.filter(function (p) { return itemMatchesQuery(p, q); });
+      shown = invItems.length;
+      shownTotal = state.inventory.length;
       body = '<div class="inv-head"><span>Item</span><span>On hand</span><span>Shelf life</span><span></span></div>' +
-        '<div class="inv-body">' + inventoryRows() + '</div>';
+        '<div class="inv-body">' + inventoryRows(invItems) + '</div>';
     } else {
       var items = (tab === 'pantry' ? bought : toBuy).filter(matches);
       shown = items.length;
@@ -1761,8 +2032,8 @@
       if (!groups) {
         body = '<div class="empty-state">' +
           (q
-            ? 'Nothing on this list matches “' + esc(state.listQuery.trim()) + '”.<br>' +
-              '<button class="empty-cta" data-act="add-named" data-name="' + esc(state.listQuery.trim()) + '">+ Add it to the list</button>'
+            ? 'Nothing on this list matches “' + esc(state.searchQuery.trim()) + '”.<br>' +
+              '<button class="empty-cta" data-act="add-named" data-name="' + esc(state.searchQuery.trim()) + '">+ Add it to the list</button>'
             : (tab === 'pantry'
               ? 'Nothing in the pantry yet. Items you check off land here automatically.'
               : (list.items.length === 0
@@ -1809,14 +2080,12 @@
       '</div>' +
 
       '<div class="list-toolbar">' +
-        '<div class="find-input">' +
-          '<svg class="ic"><use href="#i-search"/></svg>' +
-          '<input class="input" id="list-search" placeholder="Find in this list…" value="' + esc(state.listQuery) + '" autocomplete="off" aria-label="Find items in this list">' +
-          (state.listQuery
-            ? '<button class="find-clear" data-act="clear-search" aria-label="Clear search">' + icon('x') + '</button>'
-            : '') +
-        '</div>' +
-        (q ? '<span class="find-count">' + shown + ' of ' + total + '</span>' : '') +
+        (q
+          ? '<span class="find-chip">' + icon('search') +
+              'Showing ' + shown + ' of ' + shownTotal + ' for “' + esc(state.searchQuery.trim()) + '”' +
+              '<button class="find-chip-x" data-act="clear-search" aria-label="Clear search">' + icon('x') + '</button>' +
+            '</span>'
+          : '<span class="toolbar-hint">' + icon('search') + 'Use the search bar above to find any item.</span>') +
         /* you only add shopping items from the To Buy list */
         (tab === 'tobuy'
           ? '<button class="btn-add" data-act="open-add">' + icon('plus') + '<span>Add item</span></button>'
@@ -1949,12 +2218,48 @@
     '</section>';
   }
 
+  /* first-time orientation: what the three columns are for */
+  function guideCard() {
+    if (state.guideDismissed) return '';
+    return '<section class="dash-guide" aria-label="Getting started">' +
+      '<div class="dg-copy">' +
+        '<span class="eyebrow">Getting started</span>' +
+        '<h2>Your dashboard, in three steps</h2>' +
+        '<p>We added a sample shop so you can see how BiliLIST works. Edit or delete anything you like.</p>' +
+      '</div>' +
+      '<ol class="dg-steps">' +
+        '<li><span class="dg-num">1</span><div><b>Add what you need</b>' +
+          '<span>Use the search bar at the top, or “Add item” on your list.</span></div></li>' +
+        '<li><span class="dg-num">2</span><div><b>Tick items off as you shop</b>' +
+          '<span>Checked items move to your pantry and count towards spending.</span></div></li>' +
+        '<li><span class="dg-num">3</span><div><b>Check your spending</b>' +
+          '<span>Open Spending insights to see where the budget went.</span></div></li>' +
+      '</ol>' +
+      '<div class="dg-actions">' +
+        '<button class="btn-new" data-act="open-add">' + icon('plus') + ' Add your first item</button>' +
+        '<button class="dg-dismiss" data-act="dismiss-guide">Got it</button>' +
+      '</div>' +
+    '</section>';
+  }
+
   function renderDashboard() {
-    return '<div class="page"><div class="dash">' +
-      '<div class="dash-col dash-left">' + greetBlock() + spaceCard() + spendMiniCard() + tipCard() + '</div>' +
-      '<div class="dash-col dash-center">' + listCard() + lifeCard() + '</div>' +
-      '<div class="dash-col dash-right">' + calCard() + comingCard() + effortCard() + '</div>' +
-    '</div></div>';
+    return '<div class="page">' +
+      guideCard() +
+      '<div class="dash">' +
+        '<div class="dash-col dash-left">' +
+          '<span class="dash-label">At a glance</span>' +
+          greetBlock() + spaceCard() + spendMiniCard() + tipCard() +
+        '</div>' +
+        '<div class="dash-col dash-center">' +
+          '<span class="dash-label">Shopping &amp; tasks</span>' +
+          listCard() + lifeCard() +
+        '</div>' +
+        '<div class="dash-col dash-right">' +
+          '<span class="dash-label">Schedule &amp; activity</span>' +
+          calCard() + comingCard() + effortCard() +
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
 
   /* =============================== LISTS PAGE ============================= */
@@ -2286,6 +2591,7 @@
     else if (state.route === 'spending') root.innerHTML = renderSpending();
     else root.innerHTML = renderDashboard();
     renderTopbar();
+    renderSearch();
     updateLiveBadge();
   }
 
@@ -2666,6 +2972,8 @@
     state.lifeAdmin = JSON.parse(JSON.stringify(D.lifeAdmin));
     state.events = JSON.parse(JSON.stringify(D.events));
     state.activity = JSON.parse(JSON.stringify(D.activity));
+    state.searchQuery = '';
+    state.highlightId = null;
   }
 
   function signOut() {
@@ -3557,6 +3865,8 @@
       }).catch(function (err) {
         hideAppLoading();
         cloudError('Could not load your saved lists', err);
+        /* offline fallback: still give the dashboard something to show */
+        if (!state.lists.length) ensureStarterState();
         showApp();
       });
       return;
@@ -3979,8 +4289,44 @@
       render();
     });
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { closeDrawer(); toggleProfileMenu(false); }
+      if (e.key === 'Escape') {
+        closeDrawer();
+        toggleProfileMenu(false);
+        if (state.searchQuery) {
+          state.searchQuery = '';
+          state.highlightId = null;
+          render();
+        } else {
+          var focused = $('#global-search');
+          if (focused && document.activeElement === focused) focused.blur();
+        }
+        return;
+      }
+      /* "/" jumps to the search bar when the app is open */
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        var tag = (document.activeElement && document.activeElement.tagName) || '';
+        var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(tag) ||
+                     (document.activeElement && document.activeElement.isContentEditable);
+        var appOpen = $('#view-app') && !$('#view-app').classList.contains('hidden');
+        if (typing || !appOpen) return;
+        var searchBox = $('#global-search');
+        if (searchBox) { e.preventDefault(); searchBox.focus(); searchBox.select(); }
+      }
     });
+
+    /* Enter on the top search opens the first match, or adds what was typed */
+    var globalSearch = $('#global-search');
+    if (globalSearch) {
+      globalSearch.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var q = state.searchQuery.trim();
+        if (!q) return;
+        var first = document.querySelector('#search-results .search-result');
+        if (first) { first.click(); return; }
+        openAddModal(q);
+      });
+    }
 
     /* ---- global click delegation (app) ---- */
     $('#view-app').addEventListener('click', onAppClick);
@@ -4231,7 +4577,44 @@
       case 'confirm-add': confirmAdd(); break;
       case 'add-query': reviewTyped(); break;
       case 'add-named': openAddModal(el.dataset.name || ''); break;
-      case 'clear-search': state.listQuery = ''; render(); break;
+      case 'clear-search': {
+        state.searchQuery = '';
+        state.highlightId = null;
+        render();
+        var searchInput = $('#global-search');
+        if (searchInput) searchInput.focus();
+        break;
+      }
+      case 'goto-item': {
+        var gotoId = el.dataset.gotoItem;
+        state.activeListId = el.dataset.gotoList;
+        state.activeAisleTab = el.dataset.gotoTab || 'tobuy';
+        state.searchQuery = '';
+        state.highlightId = gotoId;
+        state.route = 'dashboard';
+        try { history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
+        save();
+        render();
+        focusFound(gotoId);
+        break;
+      }
+      case 'goto-pantry': {
+        var pantryId = el.dataset.gotoItem;
+        state.activeAisleTab = 'inventory';
+        state.searchQuery = '';
+        state.highlightId = pantryId;
+        state.route = 'dashboard';
+        try { history.replaceState(null, '', '#/dashboard'); } catch (e) { /* ignore */ }
+        save();
+        render();
+        focusFound(pantryId);
+        break;
+      }
+      case 'dismiss-guide':
+        state.guideDismissed = true;
+        try { localStorage.setItem(GUIDE_KEY, '1'); } catch (e) { /* ignore */ }
+        render();
+        break;
       case 'new-list': newList(); break;
       case 'new-pantry': newPantryItem(); break;
       case 'new-event': toast('Event editor is part of the next build'); break;
@@ -4256,12 +4639,11 @@
     if (!t) return;
     var id = t.id;
 
-    /* the find-in-list search only filters the list */
-    if (id === 'list-search') {
-      state.listQuery = t.value;
+    /* the top search looks across every list and the pantry */
+    if (id === 'global-search') {
+      state.searchQuery = t.value;
+      state.highlightId = null;
       render();
-      var again = $('#list-search');
-      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
       return;
     }
 
@@ -4292,9 +4674,7 @@
   }
 
   function onAppChange(e) {
-    var t = e.target;
-    if (!t) return;
-    if (t.id === 'list-search') { state.listQuery = t.value; render(); }
+    /* app inputs are handled live in onAppInput */
   }
 
   /* =============================== CATEGORY PANEL ======================== */
@@ -4415,6 +4795,7 @@
 
   function init() {
     load();
+    state.guideDismissed = readGuideDismissed();
     setBirthdayMax();
 
     /* Read the OAuth result before Supabase touches the URL. An error here

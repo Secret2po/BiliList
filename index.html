@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=9">
+<link rel="stylesheet" href="assets/css/styles.css?v=10">
 </head>
 <body>
 
@@ -384,6 +384,20 @@
     </div>
   </header>
 
+  <!-- ===================== GLOBAL SEARCH ===================== -->
+  <div class="app-search" role="search">
+    <div class="app-search-inner">
+      <div class="search-box">
+        <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+        <input class="input" id="global-search" type="search" placeholder="Search items and your pantry…" autocomplete="off" spellcheck="false" aria-label="Search items and pantry" aria-controls="search-results" aria-expanded="false">
+        <button class="search-clear" id="search-clear" data-act="clear-search" aria-label="Clear search" hidden>
+          <svg class="ic"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="search-results" id="search-results" role="region" aria-label="Search results" aria-live="polite" hidden></div>
+    </div>
+  </div>
+
   <main id="page-root"></main>
 
   <nav class="mobile-nav" id="mobile-nav" aria-label="Primary">
@@ -448,6 +462,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=9"></script>
-<script src="assets/js/app.js?v=11"></script>
+<script src="assets/js/app.js?v=12"></script>
 </body>
 </html>
