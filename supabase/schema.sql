@@ -401,6 +401,28 @@ as $$
   where not exists (
     select 1 from public.lists where workspace_id = p_workspace
   );
+
+  -- A basic calendar so the schedule is not empty on the first sign-in.
+  -- The first entry is linked to the starter grocery list; the app opens that
+  -- list straight from the "Coming up" card. Guarded by not-exists so this
+  -- never duplicates anything on a re-run or for households who already
+  -- scheduled something themselves.
+  insert into public.events (workspace_id, list_id, title, starts_at, time_label, chip, kind)
+  select p_workspace, l.id, 'Weekly grocery run',
+         date_trunc('day', now() + interval '1 day') + interval '8 hours',
+         '8:00 AM', 'The weekly shop', 'list'
+  from public.lists l
+  where l.workspace_id = p_workspace and l.kind = 'grocery'
+    and not exists (select 1 from public.events e where e.workspace_id = p_workspace);
+
+  insert into public.events (workspace_id, list_id, title, starts_at, time_label, chip, kind)
+  select p_workspace, null, 'Pay the water bill',
+         date_trunc('day', now() + interval '3 days') + interval '17 hours',
+         '5:00 PM', 'Reminder', 'event'
+  where not exists (
+    select 1 from public.events e
+    where e.workspace_id = p_workspace and e.title = 'Pay the water bill'
+  );
 $$;
 
 revoke all on function public.seed_workspace(uuid) from public, anon, authenticated;
@@ -782,7 +804,7 @@ begin
     select 1 from pg_publication
     where pubname = 'supabase_realtime' and not puballtables
   ) then
-    foreach t in array array['items', 'lists', 'pantry', 'categories', 'workspace_members']
+    foreach t in array array['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members']
     loop
       if not exists (
         select 1 from pg_publication_tables

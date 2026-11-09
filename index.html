@@ -457,11 +457,54 @@
   </div>
 </div>
 
+<!-- ================================================== plan / schedule modal -->
+<!-- One dialog, two modes, both JS-rendered:
+     "list"  -> Create a list (grocery, tasks, or an event list)
+     "event" -> Schedule or edit a calendar entry, optionally linked to a list -->
+<div class="modal" id="plan-modal" role="dialog" aria-modal="true" aria-label="Plan">
+  <div class="modal-box" id="plan-panel">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow" id="plan-eyebrow"></span>
+        <h2 id="plan-title"></h2>
+      </div>
+      <button class="drawer-close" data-plan="close" aria-label="Close">
+        <svg><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="plan-body"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost is-danger" data-plan="delete" id="plan-delete-btn" hidden>Delete</button>
+      <button class="btn-primary-sm" data-plan="submit" id="plan-submit-btn">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ notifications / alerts -->
+<div class="modal" id="notif-modal" role="dialog" aria-modal="true" aria-label="Notifications">
+  <div class="modal-box" id="notif-panel">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Low-stock watch</span>
+        <h2>Household alerts</h2>
+      </div>
+      <button class="drawer-close" data-notif="close" aria-label="Close">
+        <svg><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="notif-body"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" data-notif="permission" id="notif-permission-btn" hidden>Turn on browser alerts</button>
+      <button class="btn-primary-sm" data-notif="close">Done</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://accounts.google.com/gsi/client?hl=en" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=9"></script>
-<script src="assets/js/app.js?v=12"></script>
+<script src="assets/js/app.js?v=13"></script>
 </body>
 </html>

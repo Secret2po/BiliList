@@ -89,7 +89,11 @@
     addModal: { open: false, step: 'search', query: '', draft: null },
     editingId: null,
     catPanelOpen: false,
-    expandedCats: {}
+    expandedCats: {},
+    /* the create-list / schedule-event dialog (one modal, two modes) */
+    plan: { open: false, mode: 'list', kind: 'event', eventId: null },
+    /* low-stock warnings derived from the pantry */
+    alerts: []
   };
 
   /* ------------------------------------------------------- account boot-up */
@@ -637,6 +641,57 @@
     };
   }
 
+  /* Calendar rows -> the render shape the client calendar already draws:
+     { id, title, date:'YYYY-MM-DD', time, chip, kind:'list'|'event', listId } */
+  function mapCloudEvent(row) {
+    var starts = String(row.starts_at || '');
+    /* the household works in one timezone (UTC+8), so the UTC date part does
+       not drift across midnight for the times this app schedules */
+    var date = starts.slice(0, Math.min(10, starts.length)) || D.iso(D.TODAY);
+    var hhmm = starts.slice(11, Math.min(16, starts.length)) || '';
+    var timeLabel = row.time_label || (hhmm ? prettyTime(hhmm) : 'All day');
+    return {
+      id: row.id,
+      title: row.title,
+      date: date,
+      time: timeLabel,
+      chip: row.chip || 'Reminder',
+      kind: row.kind === 'list' ? 'list' : 'event',
+      listId: row.list_id || null
+    };
+  }
+
+  function prettyTime(hhmm) {
+    /* '08:30' -> '8:30 AM' for the cards */
+    var parts = String(hhmm || '').split(':');
+    var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10) || 0;
+    if (isNaN(h)) return '';
+    var suffix = h >= 12 ? 'PM' : 'AM';
+    var hr = h % 12; if (hr === 0) hr = 12;
+    return hr + ':' + String(m).padStart(2, '0') + ' ' + suffix;
+  }
+
+  /* an event created in the plan dialog -> a starts_at timestamp */
+  function eventStartsAt(date, timeLabel) {
+    /* the time input gives 24h 'HH:MM'; legacy labels are parsed too */
+    var hhmm = String(timeLabel || '').trim();
+    var m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+    if (!m) {
+      m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(hhmm);
+      if (m) {
+        var h = parseInt(m[1], 10) % 12;
+        if (/PM/i.test(m[3])) h += 12;
+        hhmm = String(h).padStart(2, '0') + ':' + m[2];
+      } else {
+        hhmm = '08:00';
+      }
+    }
+    var d = new Date(date + 'T' + hhmm + ':00');
+    if (isNaN(d.getTime())) d = new Date(date + 'T08:00:00');
+    return d.toISOString();
+  }
+
+
   function capRole(role) {
     var r = String(role || 'viewer').toLowerCase();
     return r.charAt(0).toUpperCase() + r.slice(1);
@@ -708,12 +763,14 @@
         S.client.from('categories').select('*').eq('workspace_id', workspace.id).order('sort_order', { ascending: true }),
         S.client.from('lists').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: true }),
         S.client.from('pantry').select('*').eq('workspace_id', workspace.id).order('name', { ascending: true }),
-        S.client.from('workspace_members').select('user_id, role, online, joined_at').eq('workspace_id', workspace.id)
+        S.client.from('workspace_members').select('user_id, role, online, joined_at').eq('workspace_id', workspace.id),
+        S.client.from('events').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true })
       ]).then(function (res) {
         var categories = cloudData(res[0], 'categories');
         var lists = cloudData(res[1], 'lists');
         var pantry = cloudData(res[2], 'pantry');
         var members = cloudData(res[3], 'members');
+        var events = cloudData(res[4], 'events');
 
         /* An account should always have somewhere to put an item. */
         var listsPromise = lists.length
@@ -747,6 +804,7 @@
                 pantry: pantry,
                 items: items,
                 members: members,
+                events: events,
                 profiles: cloudData(pr, 'profiles')
               };
             });
@@ -849,6 +907,10 @@
     state.lists = snapshot.lists.map(function (row) {
       return mapCloudList(row, byList[row.id] || []);
     });
+
+    /* the calendar is cloud-authoritative in workspace mode; demo browsers
+       keep their seeded examples */
+    state.events = (snapshot.events || []).map(mapCloudEvent);
 
     ensureStarterState();
     var ui = readUiState();
@@ -1225,7 +1287,7 @@
     try {
       cloud.channelSeq += 1;
       var channel = S.client.channel('bililist-ws-' + cloud.workspaceId + '-' + cloud.channelSeq);
-      ['items', 'lists', 'pantry', 'categories', 'workspace_members'].forEach(function (table) {
+      ['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members'].forEach(function (table) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table: table }, onRealtimeEvent);
       });
 
@@ -1315,6 +1377,47 @@
     }).select('*').single().then(function (r) {
       if (r.error) throw r.error;
       return mapCloudList(r.data, []);
+    });
+  }
+
+  /* ---- calendar events ------------------------------------------------------ */
+  function cloudInsertEvent(ev) {
+    noteCloudWrite();
+    return S.client.from('events').insert({
+      workspace_id: cloud.workspaceId,
+      list_id: ev.listId || null,
+      title: ev.title,
+      starts_at: eventStartsAt(ev.date, ev.time),
+      time_label: ev.time,
+      chip: ev.chip,
+      kind: ev.kind === 'list' ? 'list' : 'event'
+    }).select('*').single().then(function (r) {
+      if (r.error) throw r.error;
+      return mapCloudEvent(r.data);
+    });
+  }
+
+  function cloudUpdateEvent(id, ev) {
+    noteCloudWrite();
+    var patch = {
+      title: ev.title,
+      starts_at: eventStartsAt(ev.date, ev.time),
+      time_label: ev.time,
+      chip: ev.chip,
+      kind: ev.kind === 'list' ? 'list' : 'event',
+      list_id: ev.listId || null
+    };
+    return S.client.from('events').update(patch).eq('id', id).then(function (r) {
+      if (r.error) throw r.error;
+      return true;
+    });
+  }
+
+  function cloudDeleteEvent(id) {
+    noteCloudWrite();
+    return S.client.from('events').delete().eq('id', id).then(function (r) {
+      if (r && r.error) throw r.error;
+      return true;
     });
   }
 
@@ -2181,7 +2284,7 @@
           '<span class="d">' + d.getDate() + '</span><span class="m">' + MONTHS[d.getMonth()].slice(0, 3) + '</span>' +
         '</div>' +
         '<div class="ci-body">' +
-          '<div class="ci-title">' + esc(e.title) + '</div>' +
+          '<div class="ci-title" data-act="edit-event" data-event="' + esc(e.id) + '" title="Edit or remove this schedule">' + esc(e.title) + '</div>' +
           '<div class="ci-time">' + icon('clock') + esc(DOW[d.getDay()]) + ' · ' + esc(e.time) + '</div>' +
           '<div class="ci-chips">' + link + '</div>' +
         '</div>' +
@@ -2586,6 +2689,8 @@
 
   /* =============================== RENDERER =============================== */
   function render() {
+    refreshAlerts();
+    updateBellBadge();
     var root = $('#page-root');
     if (state.route === 'lists') root.innerHTML = renderLists();
     else if (state.route === 'spending') root.innerHTML = renderSpending();
@@ -2748,7 +2853,7 @@
       qty: qty,
       cat: cat,
       aisle: catName(cat),
-      owner: (state.members.filter(function (m) { return m.you; })[0] || state.members[0]).id,
+      owner: ((state.members.filter(function (m) { return m.you; })[0] || state.members[0]) || {}).id || null,
       done: false
     };
     list.items.push(item);
@@ -2925,41 +3030,531 @@
     }
   }
 
-  function newList() {
-    var name = prompt('Name your new list', 'New list');
-    if (!name || !name.trim()) return;
-    var clean = name.trim();
-    var list = {
-      id: 'l' + Date.now(),
-      name: clean,
-      kind: 'grocery',
-      icon: 'cart',
-      tint: 'green',
-      shared: true,
-      aisle: 'Other',
-      items: []
-    };
+  /* ===================================================================== */
+  /*  Plan dialog: create a list (grocery / tasks / event) and schedule or  */
+  /*  edit the calendar entries connected to those lists. Event lists and   */
+  /*  the trip they belong to are written to public.lists + public.events.  */
+  /* ===================================================================== */
+
+  var OCCASION_CHIPS = ['Reminder', 'Family', 'Party', 'Holiday', 'Errand'];
+
+  function evById(id) {
+    for (var i = 0; i < state.events.length; i++) {
+      if (state.events[i].id === id) return state.events[i];
+    }
+    return null;
+  }
+
+  function openPlanModal(mode, eventId, presetDate) {
+    var editing = eventId ? evById(eventId) : null;
+    if (editing) {
+      state.plan = {
+        open: true,
+        mode: 'event',
+        eventId: eventId,
+        name: editing.title,
+        date: editing.date,
+        time: editing.time,
+        chip: editing.chip,
+        trip: editing.kind === 'list',
+        listId: editing.listId || ''
+      };
+    } else if (mode === 'event') {
+      state.plan = {
+        open: true, mode: 'event', eventId: null,
+        name: '', date: presetDate || state.selectedDay || D.iso(D.TODAY),
+        time: '08:00', chip: 'Reminder', trip: false, listId: ''
+      };
+    } else {
+      state.plan = {
+        open: true, mode: 'list', eventId: null,
+        name: '', listKind: 'grocery',
+        date: state.selectedDay || D.iso(D.TODAY),
+        time: '08:00', chip: 'Birthday'
+      };
+    }
+    var m = $('#plan-modal');
+    if (m) m.classList.add('show');
+    renderPlanModal();
+  }
+
+  function closePlanModal() {
+    state.plan = { open: false, mode: 'list', eventId: null };
+    var m = $('#plan-modal');
+    if (m) m.classList.remove('show');
+  }
+
+  function planChip(label, active, attrs) {
+    return '<button type="button" class="plan-chip' + (active ? ' is-on' : '') + '" ' + attrs + '>' + esc(label) + '</button>';
+  }
+
+  function renderPlanModal() {
+    var p = state.plan;
+    var titleEl = $('#plan-title'), eyebrow = $('#plan-eyebrow');
+    var body = $('#plan-body');
+    if (!p.open || !body) return;
+
+    var html = '<div class="plan-err" id="plan-err"></div>';
+
+    if (p.mode === 'list') {
+      titleEl.textContent = 'Create a list';
+      eyebrow.textContent = 'New shared list';
+      $('#plan-submit-btn').textContent = 'Create';
+      $('#plan-delete-btn').hidden = true;
+
+      html +=
+        '<label class="plan-label">What is this list for?</label>' +
+        '<input class="plan-input" id="plan-name" type="text" maxlength="60" value="' + esc(p.name || '') + '" placeholder="e.g. Rain\'s birthday" />';
+
+      var kinds = [
+        { k: 'grocery', label: 'Groceries', hint: 'A shopping run with aisles and a pantry.', icon: 'cart' },
+        { k: 'event',   label: 'Event',      hint: 'A birthday or occasion with its own List and a date on the calendar.', icon: 'cake' },
+        { k: 'tasks',   label: 'Tasks',      hint: 'A simple checklist — no amounts, just checkboxes.', icon: 'list' }
+      ];
+      html += '<div class="plan-kinds">' + kinds.map(function (k) {
+        return '<button type="button" data-plan="pick-kind" data-kind="' + k.k + '" class="plan-kind' + (p.listKind === k.k ? ' is-on' : '') + '">' +
+          '<span class="pk-ico">' + icon(k.icon) + '</span><span class="pk-name">' + k.label + '</span>' +
+          '<span class="pk-hint">' + k.hint + '</span></button>';
+      }).join('') + '</div>';
+
+      if (p.listKind === 'event') {
+        html +=
+          '<div class="plan-grid">' +
+            '<div><label class="plan-label" for="plan-date">Date</label>' +
+            '<input class="plan-input" id="plan-date" type="date" value="' + esc(p.date || '') + '" /></div>' +
+            '<div><label class="plan-label" for="plan-time">Time</label>' +
+            '<input class="plan-input" id="plan-time" type="time" value="' + esc(p.time || '08:00') + '" /></div>' +
+          '</div>' +
+          '<label class="plan-label">Occasion</label>' +
+          '<div class="plan-chips">' + OCCASION_CHIPS.map(function (c) {
+            return planChip(c, p.chip === c, 'data-plan="pick-chip" data-chip="' + c + '"');
+          }).join('') + '</div>' +
+          '<p class="plan-hint">' + icon('cal-plus') + ' A reminder for this occasion is added to the calendar, and the list opens from it later.</p>';
+      }
+    } else {
+      var editing = !!p.eventId;
+      titleEl.textContent = editing ? 'Edit schedule' : 'Schedule a date';
+      eyebrow.textContent = 'Calendar';
+      $('#plan-submit-btn').textContent = editing ? 'Save' : 'Schedule';
+      $('#plan-delete-btn').hidden = !editing;
+
+      html +=
+        '<label class="plan-label" for="plan-name">' + (p.trip ? 'What run is this?' : 'What is happening?') + '</label>' +
+        '<input class="plan-input" id="plan-name" type="text" maxlength="60" value="' + esc(p.name || '') + '" placeholder="' + (p.trip ? 'e.g. Weekend grocery run' : 'e.g. Rain&#39;s birthday') + '" />' +
+
+        '<label class="plan-label">Type</label>' +
+        '<div class="plan-chips">' +
+          planChip('Shopping trip', !!p.trip, 'data-plan="pick-trip" data-trip="1"') +
+          planChip('Occasion', !p.trip, 'data-plan="pick-trip" data-trip="0"') +
+        '</div>';
+
+      if (p.trip) {
+        var options = state.lists.filter(function (l) { return l.kind === 'grocery' || l.kind === 'event'; });
+        if (!options.length) {
+          html += '<p class="plan-hint">' + icon('list') + ' No lists yet — the event will link to your first list.</p>';
+        } else {
+          var sel = '';
+          var defaultId = p.listId || activeList().id || '';
+          for (var i = 0; i < options.length; i++) {
+            var ok = options[i].id === defaultId;
+            sel += '<option value="' + esc(options[i].id) + '"' + (ok ? ' selected' : '') + '>' + esc(options[i].name) + '</option>';
+          }
+          html += '<label class="plan-label" for="plan-list">The list it opens</label>' +
+                  '<select class="plan-input" id="plan-list">' + sel + '</select>';
+        }
+      }
+
+      html += '<div class="plan-grid">' +
+        '<div><label class="plan-label" for="plan-date">Date</label>' +
+        '<input class="plan-input" id="plan-date" type="date" value="' + esc(p.date || '') + '" /></div>' +
+        '<div><label class="plan-label" for="plan-time">Time</label>' +
+        '<input class="plan-input" id="plan-time" type="time" value="' + esc(p.time || '08:00') + '" /></div>' +
+      '</div>' +
+      '<label class="plan-label">Label</label>' +
+      '<div class="plan-chips">' + OCCASION_CHIPS.map(function (c) {
+        return planChip(c, p.chip === c, 'data-plan="pick-chip" data-chip="' + c + '"');
+      }).join('') + '</div>';
+    }
+
+    body.innerHTML = html;
+    var focusEl = body.querySelector('#plan-name') || body.querySelector('#plan-date');
+    if (focusEl) focusEl.focus();
+  }
+
+  function planProblem() {
+    var p = state.plan;
+    var name = String(p.name || '').trim();
+    if (!name) return 'Give it a name.';
+    if (p.mode === 'list' ? p.listKind === 'event' || p.mode === 'event' : true) {
+      if (!p.date || !/^\d{4}-\d{2}-\d{2}$/.test(p.date)) return 'Pick a date.';
+    }
+    var d = new Date(p.date + 'T00:00:00');
+    if (isNaN(d.getTime())) return 'That date is not valid.';
+    return null;
+  }
+
+  function showPlanProblem(msg) {
+    var el = $('#plan-err');
+    if (el) { el.textContent = msg; el.classList.add('show'); }
+  }
+
+  /* local list ids -> the cloud row once insert confirms */
+  function replaceLocalList(local, saved) {
+    var index = state.lists.indexOf(local);
+    if (index !== -1) state.lists[index] = saved;
+    if (state.activeListId === local.id) state.activeListId = saved.id;
+  }
+
+  function createListFromPlan() {
+    var p = state.plan;
+    var clean = p.name.trim();
+    var kind = p.listKind === 'event' ? 'event' : (p.listKind === 'tasks' ? 'tasks' : 'grocery');
+    var visual = cloudListVisual(kind);
+
+    var list = { id: 'l' + Date.now(), name: clean, kind: kind, icon: visual.icon, tint: visual.tint, shared: true, items: [] };
     state.lists.push(list);
     state.activeListId = list.id;
-    save();
-    render();
-    toast('List “' + clean + '” created');
 
-    if (cloudMode()) {
-      cloudInsertList(clean, 'grocery').then(function (saved) {
-        var index = state.lists.indexOf(list);
-        if (index !== -1) state.lists[index] = saved;
-        if (state.activeListId === list.id) state.activeListId = saved.id;
+    var ev = null;
+    if (kind === 'event') {
+      ev = {
+        id: 'e' + Date.now(),
+        title: clean,
+        date: p.date,
+        time: prettyTime(p.time),
+        chip: p.chip,
+        kind: 'list',
+        listId: list.id
+      };
+      state.events.push(ev);
+      state.selectedDay = p.date;
+    }
+
+    save();
+    closePlanModal();
+    render();
+    toast(kind === 'event' ? '“' + clean + '” created and scheduled' : 'List “' + clean + '” created');
+
+    if (!cloudMode()) return;
+
+    cloudInsertList(clean, kind).then(function (saved) {
+      replaceLocalList(list, saved);
+      var chain = Promise.resolve();
+      if (ev) {
+        var localEv = ev;
+        chain = cloudInsertEvent({
+          title: clean, date: p.date, time: prettyTime(p.time), chip: p.chip,
+          kind: 'list', listId: saved.id
+        }).then(function (savedEv) {
+          var index = state.events.indexOf(localEv);
+          if (index !== -1) state.events[index] = savedEv;
+        });
+      }
+      return chain.then(function () {
         save();
         render();
+      });
+    }).catch(function (err) {
+      state.lists = state.lists.filter(function (l) { return l !== list; });
+      if (ev) state.events = state.events.filter(function (e) { return e !== ev; });
+      if (state.activeListId === list.id) ensureStarterState();
+      render();
+      cloudError('Could not create that list', err);
+    });
+  }
+
+  function saveEventFromPlan() {
+    var p = state.plan;
+    var ev = {
+      title: p.name.trim() || 'Untitled',
+      date: p.date,
+      time: prettyTime(p.time),
+      chip: p.chip,
+      kind: p.trip ? 'list' : 'event',
+      listId: p.trip ? (p.listId || activeList().id || null) : null
+    };
+
+    if (p.eventId) {
+      var old = evById(p.eventId);
+      if (!old) { closePlanModal(); return; }
+      var backup = { title: old.title, date: old.date, time: old.time, chip: old.chip, kind: old.kind, listId: old.listId };
+      old.title = ev.title; old.date = ev.date; old.time = ev.time;
+      old.chip = ev.chip; old.kind = ev.kind; old.listId = ev.listId;
+      save(); closePlanModal(); render();
+      toast('Schedule updated');
+
+      if (cloudMode()) {
+        var id = old.id;
+        /* an id in state.events is a cloud uuid in workspace mode */
+        if (!isUuid(id)) return;
+        cloudUpdateEvent(id, ev).catch(function (err) {
+          old.title = backup.title; old.date = backup.date; old.time = backup.time;
+          old.chip = backup.chip; old.kind = backup.kind; old.listId = backup.listId;
+          render();
+          cloudError('Could not save that schedule change', err);
+        });
+      }
+      return;
+    }
+
+    var created = { id: 'e' + Date.now(), title: ev.title, date: ev.date, time: ev.time, chip: ev.chip, kind: ev.kind, listId: ev.listId };
+    state.events.push(created);
+    state.selectedDay = ev.date;
+    save(); closePlanModal(); render();
+    toast('Scheduled for ' + DOW[new Date(ev.date + 'T00:00:00').getDay()] + ' · ' + ev.time);
+
+    if (cloudMode()) {
+      cloudInsertEvent(ev).then(function (saved) {
+        var index = state.events.indexOf(created);
+        if (index !== -1) state.events[index] = saved;
       }).catch(function (err) {
-        state.lists = state.lists.filter(function (l) { return l !== list; });
-        if (state.activeListId === list.id) ensureStarterState();
+        state.events = state.events.filter(function (e) { return e !== created; });
         render();
-        cloudError('Could not create that list', err);
+        cloudError('Could not schedule that event', err);
       });
     }
   }
+
+  function deletePlanEvent() {
+    var p = state.plan;
+    var old = evById(p.eventId);
+    if (!old) { closePlanModal(); return; }
+    state.events = state.events.filter(function (e) { return e !== old; });
+    save(); closePlanModal(); render();
+    toast('Removed from the schedule');
+
+    if (cloudMode() && isUuid(old.id)) {
+      cloudDeleteEvent(old.id).catch(function (err) {
+        state.events.push(old);
+        render();
+        cloudError('Could not delete that event', err);
+      });
+    }
+  }
+
+  function onPlanClick(e) {
+    var closeBtn = e.target.closest('[data-plan="close"]');
+    var pick = e.target.closest('[data-plan="pick-kind"],[data-plan="pick-chip"],[data-plan="pick-trip"]');
+    var submitBtn = e.target.closest('[data-plan="submit"]');
+    var deleteBtn = e.target.closest('[data-plan="delete"]');
+    if (e.target.id === 'plan-modal') { closePlanModal(); return; }
+    if (closeBtn) { closePlanModal(); return; }
+
+    if (pick) {
+      e.preventDefault();
+      if (pick.dataset.kind) {
+        state.plan.listKind = pick.dataset.kind;
+      } else if (pick.dataset.chip) {
+        state.plan.chip = pick.dataset.chip;
+      } else if (pick.dataset.trip !== undefined) {
+        state.plan.trip = pick.dataset.trip === '1';
+        if (state.plan.trip && !state.plan.listId) {
+          /* default the trip to the list the person is looking at */
+          var al = activeList();
+          state.plan.listId = al && al.id ? al.id : '';
+        }
+      }
+      renderPlanModal();
+      return;
+    }
+    if (submitBtn) {
+      e.preventDefault();
+      syncPlanInputs();
+      var problem = planProblem();
+      if (problem) { showPlanProblem(problem); return; }
+      if (state.plan.mode === 'list') createListFromPlan();
+      else saveEventFromPlan();
+      return;
+    }
+    if (deleteBtn) {
+      e.preventDefault();
+      deletePlanEvent();
+      return;
+    }
+  }
+
+  /* typed values live in the DOM between renders; park them in state so a
+     chip click does not lose what the person wrote */
+  function syncPlanInputs() {
+    var p = state.plan;
+    var name = $('#plan-name');
+    if (name) p.name = name.value;
+    var date = $('#plan-date');
+    if (date) p.date = date.value;
+    var time = $('#plan-time');
+    if (time) p.time = time.value;
+    var list = $('#plan-list');
+    if (list) p.listId = list.value;
+  }
+
+  /* ===================================================================== */
+  /*  Low-stock alerts. The pantry is the household inventory; when one of  */
+  /*  its lines reads low/empty, that becomes an alert in the bell panel   */
+  /*  and — with permission — a browser notification. The check runs on    */
+  /*  every render, so realtime pantry updates from housemates trip it     */
+  /*  automatically without any polling.                                   */
+  /* ===================================================================== */
+
+  var ALERT_SEEN_KEY = 'bililist.alertsSeen.v1';
+  var ALERT_FIRED_KEY = 'bililist.alertsFired.v1';
+
+  function readStoredMap(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function writeStoredMap(key, map) {
+    try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) { /* ignore */ }
+  }
+
+  function lowStockReason(p) {
+    var lvl = String(p.level || '').toLowerCase();
+    var exp = String(p.expiry || '').toLowerCase();
+    if (lvl === 'empty' || /out of|empty|none left/.test(exp)) return 'Out';
+    if (lvl === 'low') return 'Low';
+    if (/expired/.test(exp)) return 'Expired';
+    if (/running low|almost|getting low|low/.test(exp)) return 'Low';
+    return '';
+  }
+
+  function refreshAlerts() {
+    var rows = [];
+    state.inventory.forEach(function (p) {
+      var reason = lowStockReason(p);
+      if (!reason) return;
+      rows.push({
+        id: p.id,
+        name: p.name,
+        cat: p.cat,
+        qty: p.qty,
+        expiry: p.expiry,
+        level: p.level,
+        reason: reason
+      });
+    });
+    state.alerts = rows;
+
+    /* browser notifications: once per signature until the user looks at the
+       panel or the item recovers */
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') {
+      /* if permission was granted and then revoked, forget old fire marks */
+      return;
+    }
+    var fired = readStoredMap(ALERT_FIRED_KEY);
+    var firedNow = false;
+    var alive = {};
+    rows.forEach(function (a) {
+      var sig = a.id + '|' + a.reason + '|' + (a.expiry || '');
+      alive[sig] = true;
+      if (fired[sig]) return;
+      fired[sig] = true;
+      firedNow = true;
+      try {
+        var n = new Notification('BiliLIST — ' + a.reason + ' stock: ' + a.name, {
+          body: 'Your household is running out of ' + a.name.toLowerCase() + '. Add it to the next grocery run.',
+          tag: 'bililist-' + a.id,
+          icon: 'assets/img/icons/icon-192.png'
+        });
+        n.onclick = function () { try { window.focus(); } catch (e) { /* ignore */ } };
+      } catch (e) { /* some browsers restrict Notification construction */ }
+    });
+    /* a signature that disappeared (restocked / deleted) clears its mark so a
+       future low-stock episode alerts again */
+    for (var key in fired) {
+      if (!alive[key]) delete fired[key];
+    }
+    writeStoredMap(ALERT_FIRED_KEY, fired);
+  }
+
+  function unreadAlertCount() {
+    var seen = readStoredMap(ALERT_SEEN_KEY);
+    var count = 0;
+    state.alerts.forEach(function (a) { if (!seen[a.id]) count++; });
+    return count;
+  }
+
+  function updateBellBadge() {
+    var dot = document.querySelector('#btn-bell .dot');
+    if (!dot) return;
+    var unread = unreadAlertCount();
+    dot.classList.toggle('is-on', unread > 0);
+    var bell = $('#btn-bell');
+    if (bell) bell.title = unread
+      ? unread + ' low-stock alert' + (unread === 1 ? '' : 's') + ' — click to view'
+      : 'All stocked up — no alerts';
+  }
+
+  function openNotifModal() {
+    /* opening the panel is what clears the unread marks */
+    var map = readStoredMap(ALERT_SEEN_KEY);
+    state.alerts.forEach(function (a) { map[a.id] = true; });
+    writeStoredMap(ALERT_SEEN_KEY, map);
+    renderNotifPanel();
+    var m = $('#notif-modal');
+    if (m) m.classList.add('show');
+    updateBellBadge();
+  }
+
+  function closeNotifModal() {
+    var m = $('#notif-modal');
+    if (m) m.classList.remove('show');
+  }
+
+  function renderNotifPanel() {
+    var body = $('#notif-body');
+    if (!body) return;
+    var permBtn = $('#notif-permission-btn');
+    var supported = typeof Notification !== 'undefined';
+    var granted = supported && Notification.permission === 'granted';
+    if (permBtn) {
+      permBtn.hidden = !supported || granted;
+      permBtn.textContent = supported && Notification.permission === 'denied'
+        ? 'Browser alerts are blocked — enable them in your browser settings'
+        : 'Turn on browser alerts';
+      permBtn.disabled = supported && Notification.permission === 'denied';
+    }
+
+    var html = '';
+    if (granted) {
+      html += '<p class="notif-ok">' + icon('check') + ' Browser alerts are on — warnings pop up even when this tab is closed in the background.</p>';
+    }
+
+    if (!state.alerts.length) {
+      html += '<div class="notif-empty">' + icon('bell') +
+        '<p>All stocked up — nothing in the household inventory is running low.</p>' +
+        '<p class="notif-sub">Alerts appear here automatically when an inventory item reads low, empty, or expiring.</p></div>';
+    } else {
+      html += state.alerts.map(function (a) {
+        var level = a.reason === 'Out' || a.reason === 'Expired'
+          ? '<span class="chip chip-red">' + a.reason + '</span>'
+          : '<span class="chip chip-gold">' + a.reason + ' stock</span>';
+        return '<div class="notif-item' + (a.reason === 'Out' || a.reason === 'Expired' ? ' is-urgent' : '') + '">' +
+          '<div class="ni-main">' +
+            '<div class="ni-title">' + esc(a.name) + ' ' + level + '</div>' +
+            '<div class="ni-sub">' + icon('clock') + esc(a.expiry || 'Running low') + '</div>' +
+          '</div>' +
+          '<button class="btn-primary-sm" data-pantry="' + esc(a.name) + '" data-pantry-cat="' + esc(a.cat || '') + '" data-pantry-n="' + (a.qty ? a.qty.n : 1) + '" data-pantry-u="' + esc(a.qty ? a.qty.u : 'pcs') + '">' + icon('plus') + ' Add to list</button>' +
+        '</div>';
+      }).join('');
+      html += '<p class="notif-sub">These come from the household inventory. If the alert was wrong, fix the item in the Inventory tab of your list.</p>';
+    }
+    body.innerHTML = html;
+  }
+
+  function onNotifClick(e) {
+    if (e.target.id === 'notif-modal') { closeNotifModal(); return; }
+    var close = e.target.closest('[data-notif="close"]');
+    if (close) { closeNotifModal(); return; }
+    var perm = e.target.closest('[data-notif="permission"]');
+    if (perm) {
+      if (typeof Notification === 'undefined') return;
+      Notification.requestPermission().then(function () { renderNotifPanel(); }).catch(function () { /* ignore */ });
+      return;
+    }
+    /* the "Add to list" buttons are plain data-pantry rows handled by the
+       shared app handler, bound to this modal too */
+  }
+
+
 
   function resetLocalState() {
     state.lists = [];
@@ -4228,7 +4823,8 @@
       toggleProfileMenu();
     });
     $('#btn-bell').addEventListener('click', function () {
-      toast('You have 3 new household updates');
+      refreshAlerts();
+      openNotifModal();
     });
     $('#mnav-profile').addEventListener('click', function (e) {
       e.preventDefault();
@@ -4292,6 +4888,8 @@
       if (e.key === 'Escape') {
         closeDrawer();
         toggleProfileMenu(false);
+        closePlanModal();
+        closeNotifModal();
         if (state.searchQuery) {
           state.searchQuery = '';
           state.highlightId = null;
@@ -4337,6 +4935,14 @@
     $('#cat-modal').addEventListener('click', onCatPanelClick);
     $('#cat-modal').addEventListener('change', onCatPanelChange);
     $('#cat-modal').addEventListener('keydown', onCatPanelKeydown);
+    /* the plan and alerts dialogs have their own actions; the alerts panel
+       also hosts plain data-pantry "Add to list" buttons, so the shared app
+       handler is bound there as well */
+    $('#plan-modal').addEventListener('click', onPlanClick);
+    $('#plan-modal').addEventListener('input', syncPlanInputs);
+    $('#plan-modal').addEventListener('change', syncPlanInputs);
+    $('#notif-modal').addEventListener('click', onNotifClick);
+    $('#notif-modal').addEventListener('click', onAppClick);
     $('#drawer-content').addEventListener('click', onDrawerClick);
     $('#drawer-content').addEventListener('change', onDrawerChange);
     $('#scrim').addEventListener('click', closeDrawer);
@@ -4465,7 +5071,7 @@
     if (el.dataset.cal) {
       if (el.dataset.cal === 'prev') state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() - 1, 1);
       else if (el.dataset.cal === 'next') state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() + 1, 1);
-      else { toast('Event editor is part of the next build'); return; }
+      else { openPlanModal('event', null, state.selectedDay); return; }
       render();
       return;
     }
@@ -4615,9 +5221,13 @@
         try { localStorage.setItem(GUIDE_KEY, '1'); } catch (e) { /* ignore */ }
         render();
         break;
-      case 'new-list': newList(); break;
+      case 'new-list': openPlanModal('list'); break;
       case 'new-pantry': newPantryItem(); break;
-      case 'new-event': toast('Event editor is part of the next build'); break;
+      case 'new-event': openPlanModal('event', null, state.selectedDay); break;
+      case 'edit-event': {
+        if (el.dataset.event) openPlanModal('event', el.dataset.event);
+        break;
+      }
       case 'share': toast('Share link copied to clipboard'); break;
       case 'export': toast('Spending report exported as CSV'); break;
       case 'open-categories': openCategories(); break;
