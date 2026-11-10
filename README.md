@@ -120,10 +120,17 @@ against the warm cream page background.
 
 * **Left rail**
   * Greeting + today's date + **Create a list**.
+  * *Running low* — the pantry lines that are low, empty or expiring, with
+    **Add** and **Add all … to this list** shortcuts.
   * *Your space* — quick links to every list with live counts.
   * *Spending insights* mini card (see below).
   * *Check before you shop* tip.
 * **Centre column — Active List & Inventory (WP3)**
+  * **Create a list** opens a dialog with three kinds: **Groceries**,
+    **Tasks**, and **Event**. An event list also writes its date, time and
+    occasion label to the calendar, so the occasion opens that list again later.
+  * The active list header shows a **Schedule / Reschedule** shortcut that
+    creates or edits a calendar entry linked to the list.
   * **Quick-add search bar with recommendations** — the field at the top of the
     card behaves like a search box, not a plain input. As you type it shows:
     * **What your household already buys** — the item, the usual quantity and
@@ -152,16 +159,26 @@ against the warm cream page background.
     *To Buy* (the active list) · *Pantry* (items you have already checked off,
     they move here automatically) · *Inventory* (what is already on the shelves,
     with shelf life and a running-low state).
+  * **Inventory steppers** — every pantry line has −/+ quantity buttons and a
+    **Mark low / Mark full** toggle. Restocking clears the alert immediately.
   * Check items off → the "in the bag" counter, progress bar and header counts
     update instantly.
   * *A little life admin* — household to-dos with check-off.
 * **Right sidebar — Calendar & Event Planning**
-  * *Our calendar* — real October 2026 month grid, today highlighted, days with
-    events dotted, previous/next month navigation.
+  * *Our calendar* — live month grid, today highlighted, days with events
+    dotted, previous/next month navigation, and a **selected-day agenda** with
+    **Add** and delete actions.
+  * The **+** button and every agenda row open the same schedule dialog, where
+    an event can be created, edited, deleted, or linked to a grocery list as a
+    shopping trip.
   * *Coming up* — the next **5** upcoming events with the day of the week, and
     a **direct link to the grocery list each event needs** (e.g. *Shane's
     birthday dinner → Birthday dinner list*). Clicking the link switches the
-    centre column to that list.
+    centre column to that list; clicking the title edits the entry.
+  * **Low-stock alert bell** — the bell badge counts low, empty and expiring
+    pantry lines, and its panel lists each item with an **Add to list**
+    shortcut. With permission, the same alerts are delivered as browser
+    notifications (through `sw.js`, with a `new Notification()` fallback).
 
 ### Screen 2b — Custom categories (the "Customize categories" panel)
 The tag button in the list header opens a modal where the household controls
@@ -211,11 +228,12 @@ Right-hand slide-over drawer, exactly as in the mockup.
 * Footer note explaining the three roles.
 
 ### Screen 4 — My lists (`#/lists`)
-* Tile grid of every list with type icon, progress bar, "X of Y done" and the
-  members involved. Clicking a tile opens that list on the dashboard.
+* Tile grid of every list with type icon, progress bar, "X of Y done", the
+  members involved, and a **linked occasion/date** label for event lists.
+  Clicking a tile opens that list on the dashboard.
 * **Pantry & inventory** table: what is already at home, shelf life, a
-  *running low* state and an **Add to list** shortcut so nobody buys the same
-  thing twice.
+  *running low* state, quantity steppers, **Mark low / Mark full**, and an
+  **Add** shortcut so nobody buys the same thing twice.
 
 ### Screen 5 — Spending insights (`#/spending`)
 * Four KPI cards (this week, average trip, items bought, budget left).
@@ -329,7 +347,8 @@ still reads correctly if Google Fonts is unreachable (e.g. offline demo).
 | Buying the right product the first time | Add-item search with purchase-history + catalogue recommendations |
 | Purchased items → home inventory | *Inventory* tab + Pantry & inventory table with shelf life |
 | Spending-trend reports | Spending insights page + mini card on the dashboard |
-| Calendar task tracking & event planning | Our calendar, Coming up (5 events → direct list links), A little life admin |
+| Calendar task tracking & event planning | Our calendar with a selected-day agenda, schedule/edit/delete dialog, linked event lists, and Coming up |
+| Pantry awareness | Running-low dashboard card, inventory steppers, and bell alerts for low / empty / expiring lines |
 | Offline fallback sync | *Planned* — see roadmap |
 | Group-based access control | Owner / Editor / Viewer roles + workspace switcher |
 | Simplified entry, no unit conversion | Free-text `name, qty` field only |
@@ -342,15 +361,16 @@ still reads correctly if Google Fonts is unreachable (e.g. offline demo).
 The SPMP schedules a **Working Prototype in Week 9**, with Increment 3
 (Notification & Real-time Synchronization) landing in Weeks 10–12. Already in
 place: a **Supabase backend** (Postgres + row level security), real email and
-Google accounts, per-workspace categories/lists/items/pantry, **Supabase
-Realtime** updates, and a responsive phone layout.
+Google accounts, per-workspace categories/lists/items/pantry/events, **Supabase
+Realtime** updates, a responsive phone layout, calendar scheduling, and
+browser low-stock notifications.
 
 Still to build, in order:
 
 1. **Offline fallback** — a local queue (IndexedDB) that replays edits once the
    connection returns.
-2. **Notifications** — push/email reminders for the calendar and for a shared
-   list being changed.
+2. **Push/email reminders** — scheduled calendar reminders and shared-list
+   change emails beyond the current in-browser low-stock alerts.
 3. **Household management** — wired-up invites, role changes and workspace
    switching (the UI exists; the Supabase calls are the next step).
 

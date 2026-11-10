@@ -793,7 +793,7 @@ create policy p_activity_write on public.activity
 -- --------------------------------------------------------------------------
 --  7. Realtime
 --  Postgres Changes only broadcasts tables that belong to the
---  supabase_realtime publication. Add the five tables the app subscribes to;
+--  supabase_realtime publication. Add the six tables the app subscribes to;
 --  the DO block keeps this safe to re-run.
 -- --------------------------------------------------------------------------
 do $$

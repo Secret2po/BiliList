@@ -389,10 +389,10 @@
       { name: 'Laundry detergent',  cat: 'cleaning', n: 1,   u: 'pouch' }
     ],
     pantry: [
-      { name: 'Cooking oil',   cat: 'condiments', n: 1,   u: 'bottle', expiry: 'Good for 2 months', level: 'full' },
-      { name: 'Soy sauce',     cat: 'condiments', n: 1,   u: 'bottle', expiry: 'Good for 6 months', level: 'full' },
+      { name: 'Cooking oil',   cat: 'condiments', n: 2,   u: 'bottle', expiry: 'Good for 2 months', level: 'full' },
+      { name: 'Soy sauce',     cat: 'condiments', n: 2,   u: 'bottle', expiry: 'Good for 6 months', level: 'full' },
       { name: 'Garlic',        cat: 'produce',    n: 250, u: 'g',      expiry: 'Running low',       level: 'low'  },
-      { name: 'Instant coffee',cat: 'beverages',  n: 100, u: 'g',      expiry: 'Good for 1 month',  level: 'full' }
+      { name: 'Instant coffee',cat: 'beverages',  n: 500, u: 'g',      expiry: 'Good for 1 month',  level: 'full' }
     ],
     lifeAdmin: [
       { name: 'Pay the water bill',    when: 'Due Friday' },

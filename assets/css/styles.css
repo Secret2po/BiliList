@@ -1872,3 +1872,152 @@ select.plan-input { appearance: none; }
   .plan-grid { grid-template-columns: 1fr; }
   .plan-kinds { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   Merged event + low-stock UI (ported from the local build)
+   ========================================================================== */
+.dash > * { min-width: 0; }
+.dash .card { min-width: 0; }
+
+/* list card occasion + schedule */
+.list-occasion {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 5px;
+  font-size: 12px; color: #3C5F4A;
+}
+.list-occasion svg { width: 14px; height: 14px; color: #3B7BB5; }
+.schedule-btn {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 3px 9px;
+  border-radius: var(--r-pill); background: rgba(255,255,255,.65); border: 1px solid rgba(31,84,52,.18);
+  color: var(--green-700); font-size: 11px; font-weight: 600;
+}
+.schedule-btn:hover { background: var(--white); border-color: var(--green-500); }
+.schedule-btn svg { width: 12px; height: 12px; }
+.tile-event {
+  display: flex; align-items: center; gap: 5px; margin-top: 5px;
+  font-size: 11px; color: #3B7BB5; font-weight: 600;
+}
+.tile-event svg { width: 12px; height: 12px; }
+
+/* calendar selected-day agenda */
+.cal-agenda { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-2); }
+.ca-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 11.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 6px;
+}
+.ca-add {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+  border-radius: var(--r-pill); background: var(--green-50); color: var(--green-700);
+  font-size: 10.5px; font-weight: 700;
+}
+.ca-add:hover { background: var(--green-100); }
+.ca-add svg { width: 11px; height: 11px; }
+.ca-empty { font-size: 11.5px; color: var(--muted-2); padding: 6px 0 2px; }
+.agenda-item {
+  display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--line-2);
+  align-items: flex-start;
+}
+.agenda-item:last-child { border-bottom: 0; }
+.agenda-time { font-size: 10px; color: var(--muted); width: 52px; flex: none; padding-top: 2px; }
+.agenda-body { flex: 1; min-width: 0; }
+.agenda-title { font-size: 12.5px; font-weight: 600; }
+.agenda-meta { margin-top: 4px; }
+.agenda-del {
+  width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+  color: var(--muted-2); flex: none;
+}
+.agenda-del:hover { background: #FBEAE8; color: var(--danger); }
+.agenda-del svg { width: 12px; height: 12px; }
+
+/* low-stock dashboard card */
+.lowstock-card {
+  padding: 14px 16px; border-color: var(--gold-200);
+  background: linear-gradient(180deg, #FFFDF5, var(--white));
+}
+.lowstock-card .card-title { display: inline-flex; align-items: center; gap: 6px; color: var(--gold-600); }
+.lowstock-card .card-title svg { width: 15px; height: 15px; }
+.lowstock-copy { font-size: 12px; color: var(--muted); margin: 6px 0 8px; }
+.lowstock-rows { display: flex; flex-direction: column; gap: 4px; }
+.lowstock-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
+.lowstock-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lowstock-text b { font-size: 12.5px; }
+.lowstock-text small { font-size: 10.5px; color: var(--muted); }
+.lowstock-all {
+  width: 100%; margin-top: 8px; height: 34px; border-radius: var(--r-sm);
+  border: 1px solid var(--gold-200); background: var(--gold-100); color: var(--gold-600);
+  font-size: 12px; font-weight: 700; display: inline-flex; align-items: center;
+  justify-content: center; gap: 5px;
+}
+.lowstock-all:hover { background: #F7E6BE; }
+.lowstock-all svg { width: 13px; height: 13px; }
+
+/* quantity stepper + low/full toggle */
+.qty-stepper { display: inline-flex; align-items: center; gap: 4px; }
+.qty-btn {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--white); color: var(--ink-soft); font-size: 14px; line-height: 1;
+  display: grid; place-items: center;
+}
+.qty-btn:hover { border-color: var(--green-200); color: var(--green-700); background: var(--green-50); }
+.qty-val { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); min-width: 44px; text-align: center; }
+.inv-actions { display: flex; align-items: center; gap: 5px; justify-self: end; }
+.p-level {
+  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px;
+  border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--white);
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+}
+.p-level:hover { border-color: var(--gold-200); color: var(--gold-600); background: var(--gold-100); }
+.p-level.is-low { color: var(--green-700); border-color: var(--green-200); background: var(--green-50); }
+.p-level svg { width: 12px; height: 12px; }
+.inv-row.is-low { background: rgba(251,240,214,.28); }
+.pantry-row.is-low { background: rgba(251,240,214,.32); }
+.pantry-ico.is-low { background: var(--gold-100); color: var(--gold-600); }
+.p-actions { display: flex; align-items: center; gap: 6px; justify-self: end; }
+
+@media (max-width: 760px) {
+  .list-occasion { font-size: 11.5px; }
+  .schedule-btn { margin-left: 6px; }
+  .agenda-del { opacity: 1; }
+
+  /* the column layout must still stretch its cards to the page width,
+     otherwise a narrow screen scrolls sideways */
+  .dash { align-items: stretch; }
+  .dash > .card, .dash > .greet { width: 100%; box-sizing: border-box; }
+
+  /* the stepper needs room next to the stock toggle */
+  .inv-head, .inv-row { grid-template-columns: 28px minmax(0,1fr) 72px 90px 66px; }
+  .pantry-head, .pantry-row { grid-template-columns: 28px minmax(0,1fr) 96px 66px; }
+  .pantry-head span:last-child { display: none; }
+  .inv-actions .p-level span, .pantry-row .p-actions .p-level span { display: none; }
+  .inv-actions .p-level, .pantry-row .p-actions .p-level { width: 28px; padding: 0; justify-content: center; }
+  .inv-actions, .pantry-row .p-actions { gap: 4px; }
+
+  /* keep the new card near the greeting on phones */
+  .lowstock-card { order: 2; }
+  .space-card { order: 3; }
+  .list-card { order: 4; }
+  .spend-card { order: 5; }
+  .tip-card { order: 6; }
+  .life-card { order: 7; }
+  .cal-card { order: 8; }
+  .coming-card { order: 9; }
+  .effort-card { order: 10; }
+}
+
+@media (max-width: 620px) {
+  .inv-head, .inv-row { grid-template-columns: 28px minmax(0,1fr) 78px 60px; }
+  .qty-btn { width: 20px; height: 20px; }
+  .qty-val { min-width: 30px; font-size: 11px; }
+  .lowstock-row .p-add { font-size: 0; width: 32px; padding: 0; justify-content: center; }
+  .lowstock-row .p-add svg { width: 14px; height: 14px; }
+}
+
+@media (max-width: 480px) {
+  .inv-head, .inv-row { grid-template-columns: 28px minmax(0,1fr) 78px 60px; gap: 7px; }
+  .pantry-head, .pantry-row { grid-template-columns: 28px minmax(0,1fr) 78px 60px; gap: 7px; }
+  .qty-btn { width: 18px; height: 18px; }
+  .qty-val { min-width: 26px; font-size: 10.5px; }
+  .pantry-row .p-actions .p-add, .inv-actions .inv-add {
+    width: 28px; min-width: 28px; padding: 0; font-size: 0; justify-content: center;
+  }
+  .pantry-row .p-actions .p-add svg, .inv-actions .inv-add svg { width: 14px; height: 14px; }
+}

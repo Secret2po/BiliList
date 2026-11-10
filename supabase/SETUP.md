@@ -41,8 +41,9 @@ It also creates:
 * `handle_new_user()` — a new account gets a profile (built from first/middle/
   last name), a starter workspace and the default categories. E-mail sign-ups
   are marked `profile_complete = true`; Google accounts confirm in the app.
-* `seed_workspace(uuid)` — the one place that writes the starter categories and
-  the first list. It is used by the sign-up trigger and by the RPC below.
+* `seed_workspace(uuid)` — the one place that writes the starter categories,
+  the first list, and the two starter calendar entries (a linked weekly grocery
+  run and a reminder). It is used by the sign-up trigger and by the RPC below.
 * `ensure_user_workspace()` — an **authenticated RPC** the app calls right after
   sign-in. It returns the user's workspace and creates one (plus the starter
   data) for accounts that do not have one yet. This covers accounts created
@@ -57,7 +58,9 @@ It also creates:
 > migration code removes duplicate pantry rows before it adds the unique index.
 > After running it, the older prototype data in `localStorage` is imported once
 > the first time the account signs in against an empty workspace, then the local
-> blob is deleted.
+> blob is deleted. The current version also seeds the starter **calendar
+> events** and adds `events` to the Realtime publication, so a project that was
+> set up before the scheduling feature needs the re-run for those two pieces.
 
 ## 3. Add your keys (1 min)
 
@@ -291,8 +294,10 @@ verification outstanding.
 | **Pantry** tab | `items` | `done = true`; the trigger also tops up `pantry` |
 | **Inventory** tab / *Pantry & inventory* | `pantry` | one case-insensitive row per product |
 | Lists | `lists` | scoped to the workspace |
+| Calendar / schedule dialog | `events` | `starts_at` + `time_label`; an event list links back through `list_id` |
 | Category manager | `categories` | rename, keywords, add, delete |
 | Last list, route, spending range | `localStorage` | small UI preference only |
+| Notification "seen"/"fired" marks | `localStorage` | per browser, so each device alerts once |
 
 `assets/js/app.js` hydrates the workspace once after sign-in
 (`ensure_user_workspace()` → categories, lists, items, pantry, members) and then
@@ -302,7 +307,7 @@ to Supabase, so the sync layer stays in one place.
 ### Realtime
 
 After hydration the app opens a Supabase Realtime channel and listens to
-`postgres_changes` on `items`, `lists`, `pantry`, `categories` and
+`postgres_changes` on `items`, `lists`, `pantry`, `categories`, `events` and
 `workspace_members`. Remote changes are debounced into one snapshot refresh, so
 two devices signed into the same account stay in step without a manual reload.
 The **Live** pill next to “Shared grocery list” is green when the channel is
@@ -310,7 +315,17 @@ subscribed. Refreshes are paused while a dialog or text field has focus, so they
 never close an editor mid-edit.
 
 `Postgres Changes` only broadcasts tables that are in the `supabase_realtime`
-publication. The last section of `schema.sql` adds those five tables with an
+publication. The last section of `schema.sql` adds those six tables with an
 idempotent `DO` block. If realtime does not connect, confirm the tables are
 listed under **Database → Replication → supabase_realtime** in the dashboard
 (or re-run `schema.sql`).
+
+### Low-stock notifications
+
+The pantry is checked on every render. Low, empty and expiring lines appear in
+the bell panel; when the user presses **Turn on browser alerts** the app asks
+for the `Notification` permission. Alerts are delivered through `sw.js` when a
+service worker is available, with a `new Notification()` fallback on browsers
+that do not support one. Permission is per browser and per origin, so each
+device grants it once; the panel shows a clear blocked state if the user said
+no. No email or push server is involved yet.

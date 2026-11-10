@@ -671,6 +671,21 @@
     return hr + ':' + String(m).padStart(2, '0') + ' ' + suffix;
   }
 
+  /* a stored label like '5:00 PM' -> the 24h value a time input expects */
+  function toTimeInput(label) {
+    var s = String(label || '').trim();
+    if (!s || /all\s*day/i.test(s)) return '';
+    var m = s.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/i);
+    if (!m) return '';
+    var h = Number(m[1]);
+    var min = Number(m[2] || 0);
+    var mer = (m[3] || '').toLowerCase();
+    if (mer === 'pm' && h < 12) h += 12;
+    if (mer === 'am' && h === 12) h = 0;
+    if (h > 23 || min > 59) return '';
+    return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+  }
+
   /* an event created in the plan dialog -> a starts_at timestamp */
   function eventStartsAt(date, timeLabel) {
     /* the time input gives 24h 'HH:MM'; legacy labels are parsed too */
@@ -2018,6 +2033,39 @@
   /* ---------------------------------------------------------- pantry */
   /* The "Pantry & Inventory" tab is the household inventory: what is already
      on the shelves. Checking an item off in To Buy tops it up. */
+  function pantryAddAttrs(p) {
+    return 'data-pantry="' + esc(p.name) + '" data-pantry-cat="' + esc(p.cat || '') +
+      '" data-pantry-n="' + p.qty.n + '" data-pantry-u="' + esc(p.qty.u) + '"';
+  }
+
+  function qtyStepFor(u) {
+    var key = String(u || 'pcs');
+    if (key === 'kg' || key === 'L') return 0.1;
+    if (key === 'g' || key === 'ml') return 50;
+    return 1;
+  }
+
+  function restockAmount(q) {
+    var t = lowThreshold(q);
+    var step = qtyStepFor(q && q.u);
+    return Math.max(Number(q && q.n) || 0, t * 2, step);
+  }
+
+  function pantryStepperHtml(p) {
+    return '<span class="qty-stepper">' +
+      '<button class="qty-btn" data-act="pantry-down" data-pantry-id="' + esc(p.id) + '" aria-label="Use some ' + esc(p.name) + '">−</button>' +
+      '<span class="qty-val">' + esc(qtyText(p.qty)) + '</span>' +
+      '<button class="qty-btn" data-act="pantry-up" data-pantry-id="' + esc(p.id) + '" aria-label="Add more ' + esc(p.name) + '">+</button>' +
+    '</span>';
+  }
+
+  function pantryLevelBtn(p) {
+    var low = !!lowStockReason(p);
+    return '<button class="p-level' + (low ? ' is-low' : '') + '" data-act="pantry-level" data-pantry-id="' + esc(p.id) + '" ' +
+      'title="' + (low ? 'Mark as restocked' : 'Mark as running low') + '" aria-label="' + (low ? 'Mark as restocked' : 'Mark as running low') + '">' +
+      icon(low ? 'check-thin' : 'bulb') + '<span>' + (low ? 'Mark full' : 'Mark low') + '</span></button>';
+  }
+
   function inventoryRows(filtered) {
     var rows = filtered || state.inventory;
     if (!rows.length) {
@@ -2028,14 +2076,127 @@
       '</div>';
     }
     return rows.map(function (p) {
-      return '<div class="inv-row' + (state.highlightId === p.id ? ' is-found' : '') + '" data-inv="' + esc(p.id) + '">' +
-        '<span class="inv-ico' + (p.level === 'low' ? ' is-low' : '') + '">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
+      var reason = lowStockReason(p);
+      var low = !!reason;
+      var shelf = reason === 'Out' ? 'Out of stock'
+        : reason === 'Expired' ? 'Expired'
+        : reason === 'Low' ? 'Running low'
+        : (p.expiry || 'On the shelf');
+      return '<div class="inv-row' + (state.highlightId === p.id ? ' is-found' : '') + (low ? ' is-low' : '') + '" data-inv="' + esc(p.id) + '">' +
+        '<span class="inv-ico' + (low ? ' is-low' : '') + '">' + icon(low ? 'bulb' : 'box') + '</span>' +
         '<span class="inv-name">' + esc(p.name) + '</span>' +
-        '<span class="inv-qty">' + esc(qtyText(p.qty)) + '</span>' +
-        '<span class="inv-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry || 'On the shelf') + '</span>' +
-        '<button class="inv-add" data-pantry="' + esc(p.name) + '" data-pantry-cat="' + esc(p.cat || '') + '" data-pantry-n="' + p.qty.n + '" data-pantry-u="' + esc(p.qty.u) + '" aria-label="Add ' + esc(p.name) + ' to the list">' + icon('plus') + ' Add to list</button>' +
+        '<span class="inv-qty">' + pantryStepperHtml(p) + '</span>' +
+        '<span class="inv-exp' + (low ? ' is-low' : '') + '">' + esc(shelf) + '</span>' +
+        '<span class="inv-actions">' +
+          pantryLevelBtn(p) +
+          '<button class="inv-add" ' + pantryAddAttrs(p) + ' aria-label="Add ' + esc(p.name) + ' to the list">' + icon('plus') + ' Add</button>' +
+        '</span>' +
       '</div>';
     }).join('');
+  }
+
+  function findPantry(id) {
+    for (var i = 0; i < state.inventory.length; i++) {
+      if (state.inventory[i].id === id) return state.inventory[i];
+    }
+    return null;
+  }
+
+  function lowStockItems() {
+    return state.inventory.filter(function (p) { return !!lowStockReason(p); });
+  }
+
+  function adjustPantryQty(id, direction) {
+    var p = findPantry(id);
+    if (!p) return;
+    var step = qtyStepFor(p.qty.u);
+    var next = Number(p.qty.n) + direction * step;
+    p.qty.n = Math.max(0, Math.round(next * 1000) / 1000);
+    p.level = computedLow(p) ? 'low' : 'full';
+    if (p.level === 'low') p.expiry = 'Running low';
+    else if (/running low/i.test(p.expiry || '')) p.expiry = 'Just restocked';
+    save();
+    render();
+    if (cloudMode()) {
+      cloudUpdatePantry(p).then(function (saved) {
+        var index = state.inventory.indexOf(p);
+        if (index !== -1) state.inventory[index] = saved;
+        render();
+      }).catch(function (err) {
+        cloudError('Could not update that pantry item', err);
+      });
+    }
+  }
+
+  function togglePantryLevel(id) {
+    var p = findPantry(id);
+    if (!p) return;
+    var low = !!lowStockReason(p);
+    if (low) {
+      p.qty.n = restockAmount(p.qty);
+      p.level = 'full';
+      p.expiry = 'Just restocked';
+      toast('“' + p.name + '” marked as restocked');
+    } else {
+      p.level = 'low';
+      p.expiry = 'Running low';
+      toast('“' + p.name + '” marked as running low');
+    }
+    save();
+    render();
+    if (cloudMode()) {
+      cloudUpdatePantry(p).then(function (saved) {
+        var index = state.inventory.indexOf(p);
+        if (index !== -1) state.inventory[index] = saved;
+        render();
+      }).catch(function (err) {
+        cloudError('Could not update that pantry item', err);
+      });
+    }
+  }
+
+  function addAllLowToList() {
+    var lows = lowStockItems();
+    if (!lows.length) { toast('Nothing is running low'); return; }
+    var list = activeList();
+    if (!list) { toast('Create a list first'); return; }
+    var added = 0;
+    lows.forEach(function (p) {
+      var exists = list.items.some(function (it) {
+        return !it.done && String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase();
+      });
+      if (exists) return;
+      pushItem(p.name, { n: p.qty.n, u: p.qty.u }, p.cat);
+      added += 1;
+    });
+    render();
+    toast(added
+      ? 'Added ' + added + ' low-stock item' + (added === 1 ? '' : 's') + ' to “' + list.name + '”'
+      : 'Those items are already on “' + list.name + '”');
+  }
+
+  function lowStockCard() {
+    var lows = lowStockItems();
+    if (!lows.length) return '';
+    var shown = lows.slice(0, 3).map(function (p) {
+      return '<div class="lowstock-row">' +
+        '<span class="inv-ico is-low">' + icon('bulb') + '</span>' +
+        '<div class="lowstock-text">' +
+          '<b>' + esc(p.name) + '</b>' +
+          '<small>' + esc(qtyText(p.qty)) + ' left · ' + esc(p.expiry || 'On the shelf') + '</small>' +
+        '</div>' +
+        '<button class="p-add" ' + pantryAddAttrs(p) + '>' + icon('plus') + ' Add</button>' +
+      '</div>';
+    }).join('');
+    return '<section class="card lowstock-card">' +
+      '<div class="card-head">' +
+        '<span class="card-title">' + icon('bell') + ' Running low</span>' +
+        '<button class="card-more" data-act="open-alerts">View all ' + lows.length + '</button>' +
+      '</div>' +
+      '<p class="lowstock-copy">These are almost out. Add them before the next trip.</p>' +
+      '<div class="lowstock-rows">' + shown + '</div>' +
+      '<button class="lowstock-all" data-act="add-all-low">' + icon('plus') + ' Add all ' + lows.length + ' to this list</button>' +
+    '</section>';
   }
 
   /* checking an item off puts it in the pantry: top up an existing line,
@@ -2049,6 +2210,12 @@
     if (existing) {
       if (existing.qty.u === item.qty.u) existing.qty.n += item.qty.n;
       else existing.qty = { n: existing.qty.n, u: existing.qty.u };
+      /* a top-up should clear a stale "running low" label once the shelf
+         quantity is above the threshold again */
+      if (!computedLow(existing)) {
+        existing.level = 'full';
+        if (/running low/i.test(existing.expiry || '')) existing.expiry = 'Just restocked';
+      }
       item.pantryAdded = { merged: true, n: item.qty.n, u: item.qty.u, name: existing.name };
       return existing.name + ' topped up to ' + qtyText(existing.qty);
     }
@@ -2071,7 +2238,13 @@
     if (!a) return;
     if (a.merged) {
       state.inventory.forEach(function (p) {
-        if (p.name === a.name && p.qty.u === a.u) p.qty.n = Math.max(0, p.qty.n - a.n);
+        if (p.name === a.name && p.qty.u === a.u) {
+          p.qty.n = Math.max(0, p.qty.n - a.n);
+          if (computedLow(p)) {
+            p.level = 'low';
+            p.expiry = 'Running low';
+          }
+        }
       });
     } else {
       state.inventory = state.inventory.filter(function (p) { return p.id !== a.id; });
@@ -2148,9 +2321,10 @@
       }
     }
 
-    var nextRun = state.events.filter(function (e) { return e.kind === 'list'; })[0];
+    var nextRun = nextEventForList(list.id, true) || nextEventForList(list.id);
     var nextLabel = 'Not scheduled';
-    if (nextRun) nextLabel = shortDate(new Date(nextRun.date + 'T00:00:00'));
+    if (nextRun) nextLabel = dayLabel(nextRun.date) + ' · ' + nextRun.time;
+    var occasion = occasionForList(list.id);
 
     var tabs = [
       { id: 'tobuy', label: 'To Buy', n: toBuy.length },
@@ -2165,8 +2339,15 @@
       '<div class="list-head">' +
         '<div class="list-title-row">' +
           '<div>' +
-            '<span class="eyebrow">Shared grocery list' + liveBadgeHtml() + '</span>' +
+            '<span class="eyebrow">' +
+              (list.kind === 'event' ? 'Occasion list' : list.kind === 'tasks' ? 'Shared task list' : 'Shared grocery list') +
+              liveBadgeHtml() +
+            '</span>' +
             '<h2>' + esc(list.name) + '</h2>' +
+            (occasion
+              ? '<div class="list-occasion">' + icon('cake') + ' ' + esc(occasion.occasion) +
+                  ' · ' + esc(dayLabel(occasion.date)) + '</div>'
+              : '') +
           '</div>' +
           '<div class="list-actions">' +
             '<button class="sq-btn" data-act="open-categories" title="Customize categories" aria-label="Customize categories">' + icon('tag') + '</button>' +
@@ -2175,7 +2356,11 @@
           '</div>' +
         '</div>' +
         '<div class="list-meta">' +
-          '<span class="m">' + icon('calendar') + ' Next run: <b>' + esc(nextLabel) + '</b></span>' +
+          '<span class="m">' + icon('calendar') + ' Next run: <b>' + esc(nextLabel) + '</b>' +
+            '<button class="schedule-btn" data-act="schedule-list" data-list-id="' + esc(list.id) + '">' +
+              icon(nextRun ? 'calendar' : 'cal-plus') + (nextRun ? ' Reschedule' : ' Schedule') +
+            '</button>' +
+          '</span>' +
           '<span class="m">' + icon('box') + ' <b>' + total + '</b> items</span>' +
           '<span class="m">' + icon('check') + ' <b>' + done + '</b> done</span>' +
         '</div>' +
@@ -2229,6 +2414,97 @@
     return state.events.filter(function (e) { return e.date === dateStr; });
   }
 
+  function listById(id) {
+    for (var i = 0; i < state.lists.length; i++) if (state.lists[i].id === id) return state.lists[i];
+    return null;
+  }
+
+  function dayLabel(dateStr) {
+    var d = new Date(String(dateStr) + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return shortDate(d);
+  }
+
+  function sortEvents(a, b) {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    var ta = parseTimeLabel(a.time);
+    var tb = parseTimeLabel(b.time);
+    return (ta.h * 60 + ta.m) - (tb.h * 60 + tb.m);
+  }
+
+  function parseTimeLabel(label) {
+    var s = String(label || '').trim();
+    if (!s || /all\s*day/i.test(s)) return { h: 0, m: 0 };
+    var m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+    if (!m) return { h: 0, m: 0 };
+    var h = Number(m[1]);
+    var min = Number(m[2] || 0);
+    var mer = (m[3] || '').toLowerCase();
+    if (mer === 'pm' && h < 12) h += 12;
+    if (mer === 'am' && h === 12) h = 0;
+    return { h: Math.max(0, Math.min(23, h)), m: Math.max(0, Math.min(59, min)) };
+  }
+
+  function eventsForList(listId) {
+    return state.events.filter(function (e) { return e.listId === listId; }).sort(sortEvents);
+  }
+
+  function nextEventForList(listId, onlyTrips) {
+    var todayKey = D.iso(D.TODAY);
+    var linked = eventsForList(listId).filter(function (e) {
+      return !onlyTrips || e.kind === 'list';
+    });
+    var upcoming = linked.filter(function (e) { return e.date >= todayKey; });
+    return upcoming[0] || linked[linked.length - 1] || null;
+  }
+
+  function occasionForList(listId) {
+    var ev = eventsForList(listId)[0];
+    return ev ? { occasion: ev.chip || ev.title, date: ev.date, time: ev.time } : null;
+  }
+
+  function openPlanForList(listId) {
+    var list = listById(listId);
+    if (!list) return;
+    openPlanModal('event', null, state.selectedDay);
+    var shopping = list.kind === 'grocery' || list.kind === 'event';
+    state.plan.name = list.name;
+    state.plan.trip = shopping;
+    state.plan.listId = shopping ? listId : '';
+    state.plan.chip = 'Reminder';
+    renderPlanModal();
+  }
+
+  function dayAgendaHtml() {
+    var day = state.selectedDay || D.iso(D.TODAY);
+    var events = eventsOn(day).slice().sort(sortEvents);
+
+    var rows = events.map(function (e) {
+      var linked = e.listId ? listById(e.listId) : null;
+      var tone = e.kind === 'list' ? 'chip-green' : 'chip-gold';
+      return '<div class="agenda-item">' +
+        '<span class="agenda-time">' + esc(e.time || 'All day') + '</span>' +
+        '<div class="agenda-body">' +
+          '<div class="agenda-title">' + esc(e.title) + '</div>' +
+          '<div class="agenda-meta">' +
+            (linked
+              ? '<button class="ci-link" data-list="' + esc(linked.id) + '">' + icon('list') + ' ' + esc(linked.name) + '</button>'
+              : '<span class="chip ' + tone + '">' + esc(e.chip || 'Reminder') + '</span>') +
+          '</div>' +
+        '</div>' +
+        '<button class="agenda-del" data-act="del-event" data-event-id="' + esc(e.id) + '" aria-label="Delete ' + esc(e.title) + '">' + icon('trash') + '</button>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="cal-agenda">' +
+      '<div class="ca-head">' +
+        '<span>' + esc(dayLabel(day)) + '</span>' +
+        '<button class="ca-add" data-act="new-event" data-date="' + esc(day) + '">' + icon('plus') + ' Add</button>' +
+      '</div>' +
+      (rows || '<p class="ca-empty">Nothing planned yet. Schedule a grocery trip or a reminder.</p>') +
+    '</div>';
+  }
+
   function calCard() {
     var m = state.calMonth;
     var first = new Date(m.getFullYear(), m.getMonth(), 1);
@@ -2263,6 +2539,7 @@
         '<span><i class="today-dot"></i> Today</span>' +
         '<span><i></i> Scheduled</span>' +
       '</div>' +
+      dayAgendaHtml() +
     '</section>';
   }
 
@@ -2270,7 +2547,7 @@
     var todayKey = D.iso(D.TODAY);
     var upcoming = state.events
       .filter(function (e) { return e.date >= todayKey; })
-      .sort(function (a, b) { return a.date < b.date ? -1 : 1; })
+      .sort(sortEvents)
       .slice(0, 5);
 
     var rows = upcoming.map(function (e) {
@@ -2351,7 +2628,7 @@
       '<div class="dash">' +
         '<div class="dash-col dash-left">' +
           '<span class="dash-label">At a glance</span>' +
-          greetBlock() + spaceCard() + spendMiniCard() + tipCard() +
+          greetBlock() + lowStockCard() + spaceCard() + spendMiniCard() + tipCard() +
         '</div>' +
         '<div class="dash-col dash-center">' +
           '<span class="dash-label">Shopping &amp; tasks</span>' +
@@ -2369,6 +2646,7 @@
   function listTile(l) {
     var done = l.items.filter(function (i) { return i.done; }).length;
     var pct = l.items.length ? Math.round((done / l.items.length) * 100) : 0;
+    var occ = occasionForList(l.id);
     var tints = {
       grocery:  'background:var(--green-100);color:var(--green-600)',
       tasks:    'background:var(--gold-100);color:var(--gold-600)',
@@ -2385,6 +2663,9 @@
         '<span class="chip chip-green">' + (l.shared ? 'Shared' : 'Private') + '</span>' +
       '</div>' +
       '<div class="tile-title">' + esc(l.name) + '</div>' +
+      (occ
+        ? '<div class="tile-event">' + icon('calendar') + ' ' + esc(occ.occasion) + ' · ' + esc(dayLabel(occ.date)) + '</div>'
+        : '') +
       '<div class="tile-meta">' + l.items.length + ' items · ' + toBuyCount(l) + ' still to buy</div>' +
       '<div class="tile-bar"><i style="width:' + pct + '%"></i></div>' +
       '<div class="tile-foot">' +
@@ -2396,14 +2677,23 @@
 
   function renderLists() {
     var pantryRows = state.inventory.map(function (p) {
-      return '<div class="pantry-row">' +
-        '<span class="pantry-ico">' + icon(p.level === 'low' ? 'bulb' : 'box') + '</span>' +
+      var reason = lowStockReason(p);
+      var low = !!reason;
+      var shelf = reason === 'Out' ? 'Out of stock'
+        : reason === 'Expired' ? 'Expired'
+        : reason === 'Low' ? 'Running low'
+        : p.expiry;
+      return '<div class="pantry-row' + (low ? ' is-low' : '') + '" data-inv="' + esc(p.id) + '">' +
+        '<span class="pantry-ico' + (low ? ' is-low' : '') + '">' + icon(low ? 'bulb' : 'box') + '</span>' +
         '<div class="p-name">' + esc(p.name) + '</div>' +
-        '<div class="p-qty">' + esc(qtyText(p.qty)) + '</div>' +
-        '<div class="p-exp' + (p.level === 'low' ? ' is-low' : '') + '">' + esc(p.expiry) + '</div>' +
-        (p.level === 'low'
-          ? '<button class="p-add" data-pantry="' + esc(p.name) + '">' + icon('plus') + ' Add to list</button>'
-          : '<span class="p-ok">' + icon('check-thin') + ' In stock</span>') +
+        '<div class="p-qty">' + pantryStepperHtml(p) + '</div>' +
+        '<div class="p-exp' + (low ? ' is-low' : '') + '">' + esc(shelf) + '</div>' +
+        '<div class="p-actions">' +
+          pantryLevelBtn(p) +
+          (low
+            ? '<button class="p-add" ' + pantryAddAttrs(p) + '>' + icon('plus') + ' Add</button>'
+            : '<span class="p-ok">' + icon('check-thin') + ' In stock</span>') +
+        '</div>' +
       '</div>';
     }).join('');
 
@@ -3054,7 +3344,7 @@
         eventId: eventId,
         name: editing.title,
         date: editing.date,
-        time: editing.time,
+        time: toTimeInput(editing.time),
         chip: editing.chip,
         trip: editing.kind === 'list',
         listId: editing.listId || ''
@@ -3221,7 +3511,7 @@
         id: 'e' + Date.now(),
         title: clean,
         date: p.date,
-        time: prettyTime(p.time),
+        time: prettyTime(p.time) || 'All day',
         chip: p.chip,
         kind: 'list',
         listId: list.id
@@ -3243,7 +3533,7 @@
       if (ev) {
         var localEv = ev;
         chain = cloudInsertEvent({
-          title: clean, date: p.date, time: prettyTime(p.time), chip: p.chip,
+          title: clean, date: p.date, time: prettyTime(p.time) || 'All day', chip: p.chip,
           kind: 'list', listId: saved.id
         }).then(function (savedEv) {
           var index = state.events.indexOf(localEv);
@@ -3268,7 +3558,7 @@
     var ev = {
       title: p.name.trim() || 'Untitled',
       date: p.date,
-      time: prettyTime(p.time),
+      time: prettyTime(p.time) || 'All day',
       chip: p.chip,
       kind: p.trip ? 'list' : 'event',
       listId: p.trip ? (p.listId || activeList().id || null) : null
@@ -3328,6 +3618,26 @@
         state.events.push(old);
         render();
         cloudError('Could not delete that event', err);
+      });
+    }
+  }
+
+  /* delete straight from the calendar agenda, without opening the dialog */
+  function deleteEvent(id) {
+    var old = evById(id);
+    if (!old) return;
+    state.events = state.events.filter(function (e) { return e !== old; });
+    save();
+    render();
+    toast('Removed “' + old.title + '”');
+
+    if (cloudMode() && isUuid(id)) {
+      cloudDeleteEvent(id).catch(function (err) {
+        state.events.push(old);
+        state.events.sort(sortEvents);
+        save();
+        render();
+        cloudError('Could not remove that event', err);
       });
     }
   }
@@ -3405,6 +3715,25 @@
     try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) { /* ignore */ }
   }
 
+  function unitFamily(u) {
+    var key = String(u || 'pcs');
+    if (/^(kg|g)$/.test(key)) return 'weight';
+    if (/^(L|ml)$/.test(key)) return 'volume';
+    return 'count';
+  }
+
+  function lowThreshold(q) {
+    var u = q && q.u;
+    if (u === 'kg' || u === 'L') return 0.25;
+    if (u === 'g' || u === 'ml') return 250;
+    return 1;
+  }
+
+  function computedLow(p) {
+    var q = p && p.qty ? p.qty : { n: 0, u: 'pcs' };
+    return (Number(q.n) || 0) <= lowThreshold(q);
+  }
+
   function lowStockReason(p) {
     var lvl = String(p.level || '').toLowerCase();
     var exp = String(p.expiry || '').toLowerCase();
@@ -3412,6 +3741,10 @@
     if (lvl === 'low') return 'Low';
     if (/expired/.test(exp)) return 'Expired';
     if (/running low|almost|getting low|low/.test(exp)) return 'Low';
+    /* quantity fallback for rows that were imported without a level: one
+       retail unit, 250 g or 250 ml is treated as running low. Explicit
+       level/expiry above always wins. */
+    if (computedLow(p)) return 'Low';
     return '';
   }
 
@@ -3440,22 +3773,17 @@
       return;
     }
     var fired = readStoredMap(ALERT_FIRED_KEY);
-    var firedNow = false;
     var alive = {};
     rows.forEach(function (a) {
       var sig = a.id + '|' + a.reason + '|' + (a.expiry || '');
       alive[sig] = true;
       if (fired[sig]) return;
       fired[sig] = true;
-      firedNow = true;
-      try {
-        var n = new Notification('BiliLIST — ' + a.reason + ' stock: ' + a.name, {
-          body: 'Your household is running out of ' + a.name.toLowerCase() + '. Add it to the next grocery run.',
-          tag: 'bililist-' + a.id,
-          icon: 'assets/img/icons/icon-192.png'
-        });
-        n.onclick = function () { try { window.focus(); } catch (e) { /* ignore */ } };
-      } catch (e) { /* some browsers restrict Notification construction */ }
+      sendStockNotification(
+        'BiliLIST — ' + a.reason + ' stock: ' + a.name,
+        'Your household is running out of ' + a.name.toLowerCase() + '. Add it to the next grocery run.',
+        'bililist-' + a.id
+      );
     });
     /* a signature that disappeared (restocked / deleted) clears its mark so a
        future low-stock episode alerts again */
@@ -3463,6 +3791,35 @@
       if (!alive[key]) delete fired[key];
     }
     writeStoredMap(ALERT_FIRED_KEY, fired);
+  }
+
+  /* Prefer the service worker: its notifications survive the tab losing focus.
+     Fall back to the plain Notification constructor on browsers without one. */
+  function sendStockNotification(title, body, tag) {
+    var options = {
+      body: body,
+      tag: tag,
+      icon: 'assets/img/icons/icon-192.png',
+      badge: 'assets/img/icons/icon-192.png'
+    };
+    function fallback() {
+      try {
+        var n = new Notification(title, options);
+        n.onclick = function () { try { window.focus(); } catch (e) { /* ignore */ } };
+      } catch (e) { /* some browsers restrict Notification construction */ }
+    }
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          if (reg && reg.showNotification) return reg.showNotification(title, options);
+          throw new Error('No service worker registration');
+        }).catch(fallback);
+      } else {
+        fallback();
+      }
+    } catch (e) {
+      fallback();
+    }
   }
 
   function unreadAlertCount() {
@@ -4996,7 +5353,7 @@
   function onAppClick(e) {
     /* clicking the backdrop closes the add modal */
     if (e.target && e.target.id === 'add-modal') { closeAddModal(); return; }
-    var el = e.target.closest ? e.target.closest('[data-act],[data-route],[data-list],[data-tab],[data-cal],[data-srange],[data-pantry],[data-scat],[data-sug-name],[data-unit]') : null;
+    var el = e.target.closest ? e.target.closest('[data-act],[data-route],[data-list],[data-tab],[data-cal],[data-day],[data-srange],[data-pantry],[data-scat],[data-sug-name],[data-unit]') : null;
     if (!el) return;
 
     /* --- add-item suggestions --- */
@@ -5223,11 +5580,18 @@
         break;
       case 'new-list': openPlanModal('list'); break;
       case 'new-pantry': newPantryItem(); break;
-      case 'new-event': openPlanModal('event', null, state.selectedDay); break;
+      case 'new-event': openPlanModal('event', null, el.dataset.date || state.selectedDay); break;
       case 'edit-event': {
         if (el.dataset.event) openPlanModal('event', el.dataset.event);
         break;
       }
+      case 'schedule-list': openPlanForList(el.dataset.listId); break;
+      case 'del-event': deleteEvent(el.dataset.eventId); break;
+      case 'pantry-up': adjustPantryQty(el.dataset.pantryId, 1); break;
+      case 'pantry-down': adjustPantryQty(el.dataset.pantryId, -1); break;
+      case 'pantry-level': togglePantryLevel(el.dataset.pantryId); break;
+      case 'open-alerts': openNotifModal(); break;
+      case 'add-all-low': addAllLowToList(); break;
       case 'share': toast('Share link copied to clipboard'); break;
       case 'export': toast('Spending report exported as CSV'); break;
       case 'open-categories': openCategories(); break;
@@ -5407,6 +5771,14 @@
     load();
     state.guideDismissed = readGuideDismissed();
     setBirthdayMax();
+
+    /* A tiny worker lets low-stock notifications outlive the tab; the app
+       still falls back to new Notification() when it is unavailable. */
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function (err) {
+        console.warn('BiliLIST service worker did not register', err);
+      });
+    }
 
     /* Read the OAuth result before Supabase touches the URL. An error here
        means no account was chosen, so we deliberately do not sign anyone in. */
