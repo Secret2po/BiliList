@@ -476,6 +476,71 @@
     try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch (e) { return false; }
   }
 
+  /* =============================== THEME =================================
+     The chosen theme is stored in localStorage and applied to <html> by a
+     tiny inline script in index.html before the first paint. This layer only
+     flips it at runtime, updates the toggle labels and animates the colours. */
+  var THEME_KEY = 'bililist.theme';
+
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function themeMedia() {
+    return window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  }
+
+  function applyTheme(theme, opts) {
+    opts = opts || {};
+    var root = document.documentElement;
+
+    if (opts.animate) {
+      /* the class enables the colour transition for one switch only */
+      root.classList.add('theme-switching');
+      window.clearTimeout(applyTheme._timer);
+      applyTheme._timer = window.setTimeout(function () {
+        root.classList.remove('theme-switching');
+      }, 360);
+    }
+
+    if (theme === 'dark') root.setAttribute('data-theme', 'dark');
+    else root.removeAttribute('data-theme');
+
+    if (opts.persist !== false) {
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
+    }
+
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#221E14' : '#FEF0CB');
+
+    var label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    $$('[data-theme-toggle]').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', label);
+    });
+  }
+
+  function toggleTheme() {
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', { animate: true });
+  }
+
+  function bindTheme() {
+    $$('[data-theme-toggle]').forEach(function (btn) {
+      btn.addEventListener('click', toggleTheme);
+    });
+
+    /* follow the system preference until the user picks a side */
+    var media = themeMedia();
+    if (media && media.addEventListener) {
+      media.addEventListener('change', function (e) {
+        var saved = null;
+        try { saved = localStorage.getItem(THEME_KEY); } catch (err) { /* ignore */ }
+        if (!saved) applyTheme(e.matches ? 'dark' : 'light', { animate: true, persist: false });
+      });
+    }
+  }
+
   function saveUiState() {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({
@@ -5771,6 +5836,8 @@
     load();
     state.guideDismissed = readGuideDismissed();
     setBirthdayMax();
+    bindTheme();
+    applyTheme(currentTheme(), { persist: false });
 
     /* A tiny worker lets low-stock notifications outlive the tab; the app
        still falls back to new Notification() when it is unavailable. */

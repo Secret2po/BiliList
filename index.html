@@ -3,15 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FDFCF7">
-<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#FEF0CB">
+<meta name="color-scheme" content="light dark">
 <title>BiliLIST — A little order, a lighter day.</title>
+<script>
+  /* Apply the saved theme before the first paint, so dark mode never flashes. */
+  (function () {
+    try {
+      var saved = localStorage.getItem('bililist.theme');
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) { /* storage can be unavailable */ }
+  })();
+</script>
 <meta name="description" content="BiliLIST is a shared grocery and task list for households, roommates and friend groups. One live list everyone can edit.">
 <link rel="icon" href="assets/img/logo-mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=11">
+<link rel="stylesheet" href="assets/css/styles.css?v=12">
 </head>
 <body>
 
@@ -60,6 +70,8 @@
     <symbol id="i-arrow-up-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M8 7h9v9"/></symbol>
     <symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M19.4 4.6l-1.8 1.8M6.4 17.6l-1.8 1.8"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.6 8.6 0 0 1 9.8 3.5a8.7 8.7 0 1 0 10.7 10.7z"/></symbol>
   </defs>
 </svg>
 
@@ -75,6 +87,10 @@
       </span>
     </a>
     <div class="login-top-right">
+      <button class="icon-btn theme-toggle" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false" title="Switch theme">
+        <svg class="th-sun"><use href="#i-sun"/></svg>
+        <svg class="th-moon"><use href="#i-moon"/></svg>
+      </button>
       <span id="login-top-label">New around here?</span>
       <a href="#" id="link-signup-top" class="btn-signup">Create an account</a>
       <a href="#" id="link-signin-top" class="btn-signup" hidden>Sign in</a>
@@ -328,6 +344,11 @@
       </nav>
 
       <div class="topbar-right">
+        <button class="icon-btn theme-toggle" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false" title="Switch theme">
+          <svg class="th-sun"><use href="#i-sun"/></svg>
+          <svg class="th-moon"><use href="#i-moon"/></svg>
+        </button>
+
         <button class="icon-btn" id="btn-bell" aria-label="Notifications">
           <svg><use href="#i-bell"/></svg>
           <span class="dot"></span>
@@ -399,6 +420,15 @@
   </div>
 
   <main id="page-root"></main>
+
+  <footer class="app-foot">
+    <span>© 2026 BILILIST. A little order for everyday life.</span>
+    <span class="links">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Need help?</a>
+    </span>
+  </footer>
 
   <nav class="mobile-nav" id="mobile-nav" aria-label="Primary">
     <a class="mnav-item is-active" href="#/dashboard" data-route="dashboard">
@@ -505,6 +535,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=14"></script>
+<script src="assets/js/app.js?v=15"></script>
 </body>
 </html>
