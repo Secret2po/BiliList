@@ -105,16 +105,16 @@
 
   --cream-50:  #101511;
   --cream-100: #182019;
-  --cream-150: #221E14;
+  --cream-150: #0B624B;   /* header / footer band (Matthews Forest Green MP55690) */
   --cream-200: #202821;
   --cream-300: #2C372F;
   --white:     #FFFFFF;
 
   --surface:   #171E18;
-  --band:      #221E14;
-  --band-edge: #3A321F;
-  --band-top:  rgba(34,30,20,.94);
-  --band-ink:  #D8C38C;
+  --band:      #0B624B;
+  --band-edge: #0F7459;
+  --band-top:  rgba(11,98,75,.94);
+  --band-ink:  #D9EFE3;
   --search-bg: rgba(16,21,17,.95);
   --field-bg:  #1A221B;
   --field-line:#35422F;
@@ -2165,6 +2165,24 @@ html.theme-switching *::after {
 /* ==========================================================================
    DARK THEME — component fixes for colours that are literal in the light design
    ========================================================================== */
+/* ---- text and actions that sit on the deep green band ----
+   (light ink would vanish, so the band gets its own readable palette) */
+:root[data-theme="dark"] .topbar .brand-name .n,
+:root[data-theme="dark"] .login-top .brand-name .n { color: #EAF7F0; }
+:root[data-theme="dark"] .topbar .brand-tag,
+:root[data-theme="dark"] .login-top .brand-tag { color: #BFD9CB; }
+:root[data-theme="dark"] .topbar .main-tab { color: #D7EADF; }
+:root[data-theme="dark"] .topbar .main-tab:hover { background: rgba(255,255,255,.1); color: #F2FBF6; }
+:root[data-theme="dark"] .topbar .main-tab.is-active { background: rgba(255,255,255,.18); color: #F5FCF8; }
+:root[data-theme="dark"] .topbar .icon-btn { color: #D7EADF; }
+:root[data-theme="dark"] .topbar .icon-btn:hover { background: rgba(255,255,255,.12); color: #FFFFFF; }
+:root[data-theme="dark"] .login-top-right a { color: #E7F8EF; }
+:root[data-theme="dark"] .login-top .btn-signup { background: #E8F6EF; color: #0A5B45 !important; }
+:root[data-theme="dark"] .login-top .btn-signup:hover { background: #FFFFFF; color: #0A5B45 !important; }
+:root[data-theme="dark"] .mnav-item { color: #C3DCCE; }
+:root[data-theme="dark"] .mnav-item.is-active,
+:root[data-theme="dark"] .mnav-item.is-active svg { color: #96EDB8; }
+
 :root[data-theme="dark"] .login-form-col .input { background: var(--field-bg); border-color: var(--field-line); }
 :root[data-theme="dark"] .or-line::before,
 :root[data-theme="dark"] .or-line::after { background: var(--line); }

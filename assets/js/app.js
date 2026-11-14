@@ -511,7 +511,7 @@
     }
 
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#221E14' : '#FEF0CB');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0B624B' : '#FEF0CB');
 
     var label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
     $$('[data-theme-toggle]').forEach(function (btn) {
