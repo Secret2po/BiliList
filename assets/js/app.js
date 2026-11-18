@@ -1629,8 +1629,10 @@
     var me = you();
     var ws = activeWorkspace();
     $('#chip-avatar').textContent = me.initials;
-    $('#chip-household').textContent = ws.name;
-    $('#chip-sub').textContent = me.name.split(' ')[0] + ' · Household ' + me.role.toLowerCase();
+    var householdChip = $('#chip-household');
+    if (householdChip) householdChip.textContent = ws.name;
+    var subChip = $('#chip-sub');
+    if (subChip) subChip.textContent = me.name.split(' ')[0] + ' · Household ' + me.role.toLowerCase();
     renderProfileMenu(me, ws);
   }
 
@@ -1789,17 +1791,7 @@
     return list.items.filter(function (i) { return !i.done; }).length;
   }
 
-  function greetBlock() {
-    return '' +
-      '<section class="greet">' +
-        '<h1>A little order, a lighter day.</h1>' +
-        '<p>Welcome back, ' + esc(you().name.split(' ')[0]) + '. Here\'s what\'s new in your household\'s plate.</p>' +
-        '<div class="greet-meta">' +
-          '<span class="greet-date">' + icon('calendar') + esc(longDate(D.TODAY)) + '</span>' +
-          '<button class="btn-new" data-act="new-list">' + icon('plus') + ' Create a list</button>' +
-        '</div>' +
-      '</section>';
-  }
+
 
   function spaceCard() {
     var icons = { grocery: 'cart', tasks: 'tasks', event: 'cake', inventory: 'box' };
@@ -1824,7 +1816,6 @@
         '<button class="card-more" data-route="lists">View all ' + icon('arrow-right') + '</button>' +
       '</div>' +
       '<div class="space-list">' + rows + '</div>' +
-      '<button class="space-add" data-act="new-list">' + icon('plus') + ' Add a list</button>' +
     '</section>';
   }
 
@@ -2438,7 +2429,7 @@
               'Showing ' + shown + ' of ' + shownTotal + ' for “' + esc(state.searchQuery.trim()) + '”' +
               '<button class="find-chip-x" data-act="clear-search" aria-label="Clear search">' + icon('x') + '</button>' +
             '</span>'
-          : '<span class="toolbar-hint">' + icon('search') + 'Use the search bar above to find any item.</span>') +
+          : '<span class="toolbar-hint">' + icon('search') + 'Search finds any item on your list.</span>') +
         /* you only add shopping items from the To Buy list */
         (tab === 'tobuy'
           ? '<button class="btn-add" data-act="open-add">' + icon('plus') + '<span>Add item</span></button>'
@@ -2674,7 +2665,7 @@
       '</div>' +
       '<ol class="dg-steps">' +
         '<li><span class="dg-num">1</span><div><b>Add what you need</b>' +
-          '<span>Use the search bar at the top, or “Add item” on your list.</span></div></li>' +
+          '<span>Search for any item, or press “Add item” on your list.</span></div></li>' +
         '<li><span class="dg-num">2</span><div><b>Tick items off as you shop</b>' +
           '<span>Checked items move to your pantry and count towards spending.</span></div></li>' +
         '<li><span class="dg-num">3</span><div><b>Check your spending</b>' +
@@ -2688,15 +2679,33 @@
   }
 
   function renderDashboard() {
+    /* the search lives beside the "Shopping & tasks" label instead of as its
+       own full-width strip — one shorter box, right where it is used */
+    var search =
+      '<div class="dash-search" role="search">' +
+        '<div class="search-box search-box--dash">' +
+          '<svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>' +
+          '<input class="input" id="global-search" type="search" placeholder="Search items and pantry…" autocomplete="off" spellcheck="false" aria-label="Search items and pantry" aria-controls="search-results" aria-expanded="false">' +
+          '<button class="search-clear" id="search-clear" data-act="clear-search" aria-label="Clear search" hidden>' +
+            '<svg class="ic"><use href="#i-x"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<div class="search-results" id="search-results" role="region" aria-label="Search results" aria-live="polite" hidden></div>' +
+      '</div>';
+
     return '<div class="page">' +
       guideCard() +
       '<div class="dash">' +
         '<div class="dash-col dash-left">' +
           '<span class="dash-label">At a glance</span>' +
-          greetBlock() + lowStockCard() + spaceCard() + spendMiniCard() + tipCard() +
+          lowStockCard() + spaceCard() + spendMiniCard() + tipCard() +
         '</div>' +
         '<div class="dash-col dash-center">' +
-          '<span class="dash-label">Shopping &amp; tasks</span>' +
+          '<span class="dash-label dash-label-row"><span>Shopping &amp; tasks</span>' +
+            '<span class="dash-tools">' + search +
+              '<button class="btn-new btn-new-sm" data-act="new-list">' + icon('plus') + ' Add List</button>' +
+            '</span>' +
+          '</span>' +
           listCard() + lifeCard() +
         '</div>' +
         '<div class="dash-col dash-right">' +
@@ -2768,9 +2777,7 @@
           '<h1>My lists</h1>' +
           '<p>Every grocery run, chore and event in one place.</p>' +
         '</div>' +
-        '<div class="page-head-actions">' +
-          '<button class="btn-new" data-act="new-list">' + icon('plus') + ' Create a list</button>' +
-        '</div>' +
+
       '</div>' +
       '<div class="list-grid">' + state.lists.map(listTile).join('') + '</div>' +
 
@@ -3046,12 +3053,28 @@
   function render() {
     refreshAlerts();
     updateBellBadge();
+    /* the search box lives inside the page now, so it would lose focus on
+       every render — remember where the caret was and put it back after */
+    var focused = document.activeElement;
+    var keep = focused && focused.id === 'global-search';
+    var selStart = null, selEnd = null;
+    if (keep) { selStart = focused.selectionStart; selEnd = focused.selectionEnd; }
+
     var root = $('#page-root');
     if (state.route === 'lists') root.innerHTML = renderLists();
     else if (state.route === 'spending') root.innerHTML = renderSpending();
     else root.innerHTML = renderDashboard();
     renderTopbar();
     renderSearch();
+    if (keep) {
+      var input = $('#global-search');
+      if (input) {
+        input.focus({ preventScroll: true });
+        if (selStart !== null) {
+          try { input.setSelectionRange(selStart, selEnd); } catch (e) { /* type=search does not guarantee this */ }
+        }
+      }
+    }
     updateLiveBadge();
   }
 
@@ -3905,20 +3928,35 @@
       : 'All stocked up — no alerts';
   }
 
-  function openNotifModal() {
-    /* opening the panel is what clears the unread marks */
-    var map = readStoredMap(ALERT_SEEN_KEY);
-    state.alerts.forEach(function (a) { map[a.id] = true; });
-    writeStoredMap(ALERT_SEEN_KEY, map);
+  function openNotifDropdown() {
+    var menu = $('#notif-menu');
+    if (!menu) return;
     renderNotifPanel();
-    var m = $('#notif-modal');
-    if (m) m.classList.add('show');
-    updateBellBadge();
+    menu.hidden = false;
+    var bell = $('#btn-bell');
+    if (bell) bell.setAttribute('aria-expanded', 'true');
   }
 
-  function closeNotifModal() {
-    var m = $('#notif-modal');
-    if (m) m.classList.remove('show');
+  function closeNotifDropdown() {
+    var menu = $('#notif-menu');
+    if (!menu) return;
+    menu.hidden = true;
+    var bell = $('#btn-bell');
+    if (bell) bell.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleNotifDropdown() {
+    var menu = $('#notif-menu');
+    if (!menu) return;
+    if (menu.hidden) openNotifDropdown();
+    else closeNotifDropdown();
+  }
+
+  function markAlertSeen(id) {
+    var map = readStoredMap(ALERT_SEEN_KEY);
+    map[id] = true;
+    writeStoredMap(ALERT_SEEN_KEY, map);
+    updateBellBadge();
   }
 
   function renderNotifPanel() {
@@ -3934,6 +3972,10 @@
         : 'Turn on browser alerts';
       permBtn.disabled = supported && Notification.permission === 'denied';
     }
+    var seenMap = readStoredMap(ALERT_SEEN_KEY);
+    var anyUnread = state.alerts.some(function (a) { return !seenMap[a.id]; });
+    var readAll = $('#notif-mark-read');
+    if (readAll) readAll.disabled = !anyUnread;
 
     var html = '';
     if (granted) {
@@ -3946,26 +3988,59 @@
         '<p class="notif-sub">Alerts appear here automatically when an inventory item reads low, empty, or expiring.</p></div>';
     } else {
       html += state.alerts.map(function (a) {
+        var isRead = !!seenMap[a.id];
         var level = a.reason === 'Out' || a.reason === 'Expired'
           ? '<span class="chip chip-red">' + a.reason + '</span>'
           : '<span class="chip chip-gold">' + a.reason + ' stock</span>';
-        return '<div class="notif-item' + (a.reason === 'Out' || a.reason === 'Expired' ? ' is-urgent' : '') + '">' +
+        return '<div class="notif-item notif-goto' + (a.reason === 'Out' || a.reason === 'Expired' ? ' is-urgent' : '') + (isRead ? ' is-read' : '') + '" role="button" tabindex="0" data-notif="goto" data-item="' + esc(a.id) + '" title="Show in Inventory">' +
           '<div class="ni-main">' +
             '<div class="ni-title">' + esc(a.name) + ' ' + level + '</div>' +
             '<div class="ni-sub">' + icon('clock') + esc(a.expiry || 'Running low') + '</div>' +
           '</div>' +
-          '<button class="btn-primary-sm" data-pantry="' + esc(a.name) + '" data-pantry-cat="' + esc(a.cat || '') + '" data-pantry-n="' + (a.qty ? a.qty.n : 1) + '" data-pantry-u="' + esc(a.qty ? a.qty.u : 'pcs') + '">' + icon('plus') + ' Add to list</button>' +
+          '<button class="btn-primary-sm notif-add" data-pantry="' + esc(a.name) + '" data-pantry-cat="' + esc(a.cat || '') + '" data-pantry-n="' + (a.qty ? a.qty.n : 1) + '" data-pantry-u="' + esc(a.qty ? a.qty.u : 'pcs') + '">' + icon('plus') + ' Add</button>' +
         '</div>';
       }).join('');
-      html += '<p class="notif-sub">These come from the household inventory. If the alert was wrong, fix the item in the Inventory tab of your list.</p>';
+      html += '<p class="notif-sub">Tap an alert to jump to the item in Inventory. Alerts clear themselves when the household restocks.</p>';
     }
     body.innerHTML = html;
   }
 
   function onNotifClick(e) {
-    if (e.target.id === 'notif-modal') { closeNotifModal(); return; }
-    var close = e.target.closest('[data-notif="close"]');
-    if (close) { closeNotifModal(); return; }
+    /* the Add button does the shopping-list part through the shared app
+       handler; the alert itself is marked read but the menu stays open */
+    var add = e.target.closest('[data-pantry]');
+    if (add) {
+      var gotoAdd = e.target.closest('[data-notif="goto"]');
+      if (gotoAdd) { markAlertSeen(gotoAdd.dataset.item); renderNotifPanel(); }
+      return;
+    }
+    var read = e.target.closest('[data-notif="read"]');
+    if (read) {
+      var map = {};
+      state.alerts.forEach(function (a) { map[a.id] = true; });
+      writeStoredMap(ALERT_SEEN_KEY, map);
+      updateBellBadge();
+      renderNotifPanel();
+      toast('All alerts marked as read');
+      return;
+    }
+    var goto = e.target.closest('[data-notif="goto"]');
+    if (goto) {
+      var id = goto.dataset.item;
+      markAlertSeen(id);
+      closeNotifDropdown();
+      state.activeAisleTab = 'inventory';
+      state.searchQuery = '';
+      state.highlightId = id;
+      state.route = 'dashboard';
+      try { history.replaceState(null, '', '#/dashboard'); } catch (e2) { /* ignore */ }
+      save();
+      render();
+      focusFound(id);
+      return;
+    }
+    if (e.target.closest('[data-notif="close"]')) { closeNotifDropdown(); return; }
+    if (e.target.id === 'notif-menu') { closeNotifDropdown(); return; }
     var perm = e.target.closest('[data-notif="permission"]');
     if (perm) {
       if (typeof Notification === 'undefined') return;
@@ -4122,6 +4197,7 @@
     $('#field-first').hidden = !showNames;
     $('#field-middle').hidden = !showNames;
     $('#field-last').hidden = !showNames;
+    $('#field-suffix').hidden = !showNames;
     $('#field-birthday').hidden = !showNames;
     $('#field-password').hidden = isVerify || isOnboard;
     $('#field-confirm').hidden = !(isSignup || isNewPass || isOnboardPass);
@@ -4194,10 +4270,10 @@
   }
 
   function clearAuthErrors() {
-    ['err-first', 'err-middle', 'err-last', 'err-birthday', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
+    ['err-first', 'err-middle', 'err-last', 'err-suffix', 'err-birthday', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('show');
     });
-    ['f-first', 'f-middle', 'f-last', 'f-birthday', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+    ['f-first', 'f-middle', 'f-last', 'f-suffix', 'f-birthday', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('invalid');
     });
     var note = $('#auth-note');
@@ -4209,12 +4285,14 @@
     if (!el) return;
     var input = {
       'err-first': 'f-first', 'err-middle': 'f-middle', 'err-last': 'f-last',
+      'err-suffix': 'f-suffix',
       'err-birthday': 'f-birthday', 'err-email': 'f-email',
       'err-pass': 'f-pass', 'err-pass2': 'f-pass2', 'err-code': 'f-code'
     }[field];
     if (field === 'err-first') el.textContent = message || 'Enter your first name.';
     if (field === 'err-middle') el.textContent = message || 'Use letters only for your middle name.';
     if (field === 'err-last') el.textContent = message || 'Enter your last name.';
+    if (field === 'err-suffix') el.textContent = message || 'Use letters, numbers or periods, e.g. Jr. or III.';
     if (field === 'err-birthday') el.textContent = message || 'Enter a valid birthday that is not in the future.';
     if (field === 'err-email') el.textContent = message || 'Enter a valid email address, e.g. you@example.com';
     if (field === 'err-pass') el.textContent = message || 'Enter your password.';
@@ -4245,11 +4323,14 @@
 
   function passwordProblems(pw) {
     var out = [];
-    if (!pw) out.push('Enter your password.');
+    var trimmed = String(pw || '').trim();
+    if (!trimmed || /^\s+$/.test(String(pw))) out.push('Enter your password.');
     else {
-      if (pw.length < 8) out.push('Use at least 8 characters.');
-      if (!/[a-zA-Z]/.test(pw)) out.push('Include a letter.');
-      if (!/[0-9]/.test(pw)) out.push('Include a number.');
+      /* a password cannot be salvaged by hiding whitespace: check the
+         trimmed form so "10 spaces + 1a" fails the same as "1a" */
+      if (trimmed.length < 8) out.push('Use at least 8 characters.');
+      if (!/[a-zA-Z]/.test(trimmed)) out.push('Include a letter.');
+      if (!/[0-9]/.test(trimmed)) out.push('Include a number.');
     }
     return out;
   }
@@ -4260,12 +4341,25 @@
      hyphens and apostrophes. */
   var NAME_RE = /^[\p{L}\p{M}' .-]+$/u;
 
-  function nameProblem(value, label) {
+  function nameProblem(value, label, required) {
     var v = String(value || '').trim();
-    if (!v) return 'Enter your ' + label + '.';
+    if (!v) return required === false ? '' : 'Enter your ' + label + '.';
     if (v.length > 60) return 'Keep your ' + label + ' under 60 characters.';
+    if (v.length < 2 && required !== false) return 'Your ' + label + ' must be at least 2 characters.';
     if (/\d/.test(v)) return 'Names cannot include numbers.';
     if (!NAME_RE.test(v)) return 'Use letters, spaces, hyphens or apostrophes only.';
+    return '';
+  }
+
+  /* Suffix: Jr., Sr., II, III, IV, letters, periods and optional digits —
+     deliberately its own rule because suffixes are not plain names. */
+  var SUFFIX_RE = /^[\p{L}\p{M}0-9.' -]+$/u;
+
+  function suffixProblem(value) {
+    var v = String(value || '').trim();
+    if (!v) return '';
+    if (v.length > 12) return 'Keep your suffix under 12 characters.';
+    if (!SUFFIX_RE.test(v)) return 'Use letters, numbers, periods or hyphens, e.g. Jr. or III.';
     return '';
   }
 
@@ -4278,11 +4372,24 @@
     today.setHours(0, 0, 0, 0);
     if (d > today) return 'Birthday cannot be in the future.';
     if (d.getFullYear() < 1900) return 'Enter a birthday after 1900.';
+    /* minimum age: 8 — keeps impossible/dummy dates out of the form */
+    var cutoff = new Date(today.getFullYear() - 8, today.getMonth(), today.getDate());
+    if (d > cutoff) return 'You must be at least 8 years old.';
     return '';
   }
 
-  function fullNameOf(first, middle, last) {
-    return [first, middle, last]
+  /* the date input itself blocks anything newer than the minimum age */
+  var BIRTHDAY_MIN_AGE = 8;
+  function maxBirthdayString() {
+    var d = new Date();
+    d.setFullYear(d.getFullYear() - BIRTHDAY_MIN_AGE);
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+
+  function fullNameOf(first, middle, last, suffix) {
+    return [first, middle, last, suffix]
       .map(function (p) { return String(p || '').trim(); })
       .filter(Boolean)
       .join(' ')
@@ -4340,6 +4447,7 @@
       first_name: details.firstName,
       middle_name: details.middleName || '',
       last_name: details.lastName,
+      suffix: details.suffix || '',
       full_name: details.fullName,
       birthday: details.birthday || null
     };
@@ -4810,6 +4918,7 @@
         first_name: details.firstName,
         middle_name: details.middleName || '',
         last_name: details.lastName,
+        suffix: details.suffix || '',
         full_name: details.fullName,
         birthday: details.birthday || ''
       };
@@ -4992,6 +5101,7 @@
     var middle = meta.middle_name || '';
     var last = meta.last_name || meta.family_name || '';
     var full = meta.full_name || meta.name || '';
+    var suffix = meta.suffix || '';
 
     if ((!first || !last) && full) {
       var parts = String(full).trim().split(/\s+/).filter(Boolean);
@@ -5007,6 +5117,7 @@
     $('#f-first').value = first;
     $('#f-middle').value = middle;
     $('#f-last').value = last;
+    $('#f-suffix').value = suffix;
     $('#f-birthday').value = meta.birthday || '';
     $('#f-email').value = email;
     $('#f-pass').value = '';
@@ -5036,21 +5147,24 @@
     var first = ($('#f-first').value || '').trim();
     var middle = ($('#f-middle').value || '').trim();
     var last = ($('#f-last').value || '').trim();
+    var suffix = ($('#f-suffix').value || '').trim().replace(/\s{2,}/g, ' ');
     var birthday = ($('#f-birthday').value || '').trim();
     var email = ($('#f-email').value || '').trim();
-    var pw = $('#f-pass').value || '';
-    var pw2 = $('#f-pass2').value || '';
+    var pw = ($('#f-pass').value || '').trim();
+    var pw2 = ($('#f-pass2').value || '').trim();
     var code = ($('#f-code').value || '').replace(/\D/g, '');
 
     function validateNameFields() {
       var fp = nameProblem(first, 'first name');
       if (fp) { authError('err-first', fp); $('#f-first').focus(); return false; }
       if (middle) {
-        var mp = nameProblem(middle, 'middle name');
+        var mp = nameProblem(middle, 'middle name', false);
         if (mp) { authError('err-middle', mp); $('#f-middle').focus(); return false; }
       }
       var lp = nameProblem(last, 'last name');
       if (lp) { authError('err-last', lp); $('#f-last').focus(); return false; }
+      var sp = suffixProblem(suffix);
+      if (sp) { authError('err-suffix', sp); $('#f-suffix').focus(); return false; }
       var bp = birthdayProblem(birthday);
       if (bp) { authError('err-birthday', bp); $('#f-birthday').focus(); return false; }
       return true;
@@ -5061,8 +5175,9 @@
         firstName: first,
         middleName: middle,
         lastName: last,
+        suffix: suffix,
         birthday: birthday,
-        fullName: fullNameOf(first, middle, last)
+        fullName: fullNameOf(first, middle, last, suffix)
       };
     }
 
@@ -5246,7 +5361,7 @@
     });
     $('#btn-bell').addEventListener('click', function () {
       refreshAlerts();
-      openNotifModal();
+      toggleNotifDropdown();
     });
     $('#mnav-profile').addEventListener('click', function (e) {
       e.preventDefault();
@@ -5299,6 +5414,11 @@
       if (e.target.closest && e.target.closest('#profile-menu')) return;
       toggleProfileMenu(false);
     });
+    /* same outside-click behaviour for the bell dropdown */
+    document.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('#bell-wrap')) return;
+      closeNotifDropdown();
+    });
     /* close the item popover when clicking anywhere else */
     document.addEventListener('click', function (e) {
       if (!state.editingId) return;
@@ -5311,7 +5431,7 @@
         closeDrawer();
         toggleProfileMenu(false);
         closePlanModal();
-        closeNotifModal();
+        closeNotifDropdown();
         if (state.searchQuery) {
           state.searchQuery = '';
           state.highlightId = null;
@@ -5363,8 +5483,16 @@
     $('#plan-modal').addEventListener('click', onPlanClick);
     $('#plan-modal').addEventListener('input', syncPlanInputs);
     $('#plan-modal').addEventListener('change', syncPlanInputs);
-    $('#notif-modal').addEventListener('click', onNotifClick);
-    $('#notif-modal').addEventListener('click', onAppClick);
+    $('#notif-menu').addEventListener('click', onNotifClick);
+    $('#notif-menu').addEventListener('click', onAppClick);
+    /* pressing Enter/Space on a tabbed alert jumps to the item */
+    $('#notif-menu').addEventListener('keydown', function (e) {
+      var row = e.target && e.target.closest && e.target.closest('[data-notif="goto"]');
+      if (row && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        onNotifClick({ target: row, preventDefault: function () {} });
+      }
+    });
     $('#drawer-content').addEventListener('click', onDrawerClick);
     $('#drawer-content').addEventListener('change', onDrawerChange);
     $('#scrim').addEventListener('click', closeDrawer);
@@ -5655,7 +5783,7 @@
       case 'pantry-up': adjustPantryQty(el.dataset.pantryId, 1); break;
       case 'pantry-down': adjustPantryQty(el.dataset.pantryId, -1); break;
       case 'pantry-level': togglePantryLevel(el.dataset.pantryId); break;
-      case 'open-alerts': openNotifModal(); break;
+      case 'open-alerts': toggleNotifDropdown(); break;
       case 'add-all-low': addAllLowToList(); break;
       case 'share': toast('Share link copied to clipboard'); break;
       case 'export': toast('Spending report exported as CSV'); break;
@@ -5826,10 +5954,8 @@
   function setBirthdayMax() {
     var input = $('#f-birthday');
     if (!input) return;
-    var d = new Date();
-    var m = String(d.getMonth() + 1).padStart(2, '0');
-    var day = String(d.getDate()).padStart(2, '0');
-    input.max = d.getFullYear() + '-' + m + '-' + day;
+    /* today is also off-limits; the picker stops at the 8th-birthday mark */
+    input.max = maxBirthdayString();
   }
 
   function init() {

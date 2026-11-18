@@ -517,6 +517,7 @@ declare
   v_first text;
   v_middle text;
   v_last text;
+  v_suffix text;
   v_name text;
   v_username text;
   v_avatar text;
@@ -533,8 +534,9 @@ begin
     new.raw_user_meta_data ->> 'family_name',
     ''
   )), '');
+  v_suffix := nullif(trim(coalesce(new.raw_user_meta_data ->> 'suffix', '')), '');
 
-  v_name := nullif(trim(concat_ws(' ', v_first, v_middle, v_last)), '');
+  v_name := nullif(trim(concat_ws(' ', v_first, v_middle, v_last, v_suffix)), '');
   v_name := coalesce(
     v_name,
     nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),

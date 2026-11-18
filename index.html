@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=13">
+<link rel="stylesheet" href="assets/css/styles.css?v=14">
 </head>
 <body>
 
@@ -126,20 +126,6 @@
         </div>
 
         <form id="login-form" novalidate>
-          <div id="google-auth">
-            <div id="google-signin-button" class="google-signin-button" hidden></div>
-            <button class="btn-google" type="button" id="btn-google">
-              <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-              </svg>
-              <span class="btn-google-label">Continue with Google</span>
-            </button>
-            <div class="or-line">or log in with email</div>
-          </div>
-
           <div class="field" id="field-first" hidden>
             <label for="f-first">First name</label>
             <div class="input-wrap">
@@ -165,6 +151,15 @@
               <input class="input with-icon" type="text" id="f-last" placeholder="e.g. Lopez" autocomplete="family-name" maxlength="60">
             </div>
             <div class="field-error" id="err-last">Enter your last name.</div>
+          </div>
+
+          <div class="field" id="field-suffix" hidden>
+            <label for="f-suffix">Suffix <span class="optional">(optional)</span></label>
+            <div class="input-wrap">
+              <svg><use href="#i-user"/></svg>
+              <input class="input with-icon" type="text" id="f-suffix" placeholder="e.g. Jr., Sr., III" autocomplete="honorific-suffix" maxlength="12">
+            </div>
+            <div class="field-error" id="err-suffix">Enter a real suffix, e.g. Jr., Sr. or III.</div>
           </div>
 
           <div class="field" id="field-email">
@@ -235,6 +230,20 @@
             <span>Log in</span>
             <svg><use href="#i-arrow-right"/></svg>
           </button>
+
+          <div id="google-auth">
+            <div class="or-line">or log in with Google</div>
+            <div id="google-signin-button" class="google-signin-button" hidden></div>
+            <button class="btn-google" type="button" id="btn-google">
+              <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              <span class="btn-google-label">Continue with Google</span>
+            </button>
+          </div>
 
           <div class="auth-secondary" id="auth-secondary">
             <span>Don't have an account?</span>
@@ -349,19 +358,26 @@
           <svg class="th-moon"><use href="#i-moon"/></svg>
         </button>
 
-        <button class="icon-btn" id="btn-bell" aria-label="Notifications">
-          <svg><use href="#i-bell"/></svg>
-          <span class="dot"></span>
-        </button>
+        <div class="bell-wrap" id="bell-wrap">
+          <button class="icon-btn" id="btn-bell" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-menu">
+            <svg><use href="#i-bell"/></svg>
+            <span class="dot"></span>
+          </button>
+          <div class="notif-menu" id="notif-menu" role="menu" aria-label="Low-stock alerts" hidden>
+            <div class="notif-menu-head">
+              <span class="notif-menu-title"><svg><use href="#i-bell"/></svg> Low-stock</span>
+              <button class="notif-mark-read" id="notif-mark-read" data-notif="read" type="button">Mark all as read</button>
+            </div>
+            <div class="notif-menu-body" id="notif-body"></div>
+            <div class="notif-menu-foot">
+              <button class="btn-ghost" type="button" data-notif="permission" id="notif-permission-btn" hidden>Turn on browser alerts</button>
+            </div>
+          </div>
+        </div>
 
         <div class="profile-menu" id="profile-menu">
-          <button class="user-chip" id="btn-profile" aria-haspopup="true" aria-expanded="false">
+          <button class="user-chip" id="btn-profile" aria-haspopup="true" aria-expanded="false" aria-label="Account menu" title="Account menu">
             <span class="avatar" id="chip-avatar">AL</span>
-            <span class="user-chip-text">
-              <span class="u-name" id="chip-household">The Lopez Household</span>
-              <span class="u-sub" id="chip-sub">Alex · Household owner</span>
-            </span>
-            <svg><use href="#i-chevron-down"/></svg>
           </button>
 
           <div class="pmenu" id="pmenu" role="menu">
@@ -405,19 +421,7 @@
     </div>
   </header>
 
-  <!-- ===================== GLOBAL SEARCH ===================== -->
-  <div class="app-search" role="search">
-    <div class="app-search-inner">
-      <div class="search-box">
-        <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
-        <input class="input" id="global-search" type="search" placeholder="Search items and your pantry…" autocomplete="off" spellcheck="false" aria-label="Search items and pantry" aria-controls="search-results" aria-expanded="false">
-        <button class="search-clear" id="search-clear" data-act="clear-search" aria-label="Clear search" hidden>
-          <svg class="ic"><use href="#i-x"/></svg>
-        </button>
-      </div>
-      <div class="search-results" id="search-results" role="region" aria-label="Search results" aria-live="polite" hidden></div>
-    </div>
-  </div>
+
 
   <main id="page-root"></main>
 
@@ -510,31 +514,11 @@
   </div>
 </div>
 
-<!-- ================================================ notifications / alerts -->
-<div class="modal" id="notif-modal" role="dialog" aria-modal="true" aria-label="Notifications">
-  <div class="modal-box" id="notif-panel">
-    <div class="modal-head">
-      <div>
-        <span class="eyebrow">Low-stock watch</span>
-        <h2>Household alerts</h2>
-      </div>
-      <button class="drawer-close" data-notif="close" aria-label="Close">
-        <svg><use href="#i-x"/></svg>
-      </button>
-    </div>
-    <div class="modal-body" id="notif-body"></div>
-    <div class="modal-foot">
-      <button class="btn-ghost" data-notif="permission" id="notif-permission-btn" hidden>Turn on browser alerts</button>
-      <button class="btn-primary-sm" data-notif="close">Done</button>
-    </div>
-  </div>
-</div>
-
 <script src="https://accounts.google.com/gsi/client?hl=en" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=16"></script>
+<script src="assets/js/app.js?v=17"></script>
 </body>
 </html>

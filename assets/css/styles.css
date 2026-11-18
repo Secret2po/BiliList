@@ -2278,3 +2278,101 @@ html.theme-switching *::after {
 @media (max-width: 760px) {
   .app-foot { display: none; }   /* the bottom nav is the footer on phones */
 }
+
+/* ==========================================================================
+   Feedback round: header calm, bell dropdown, compact search, mobile hard
+   ========================================================================== */
+
+/* the everyday header dims slightly so content leads; hover or keyboard
+   focus brings it straight back to full strength */
+.topbar { opacity: .93; transition: opacity .25s ease; }
+.topbar:hover, .topbar:focus-within { opacity: 1; }
+@media (prefers-reduced-transparency: reduce) { .topbar { opacity: 1; } }
+
+/* main tabs scroll sideways instead of wrapping/shattering on narrow screens */
+.main-tabs { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+.main-tabs::-webkit-scrollbar { display: none; }
+
+/* header profile entry: a compact round icon with a hover ring */
+.user-chip {
+  padding: 3px; border-radius: 50%; background: transparent;
+  border: 1.5px solid transparent; box-shadow: none;
+}
+.user-chip:hover, .user-chip:focus-visible {
+  border-color: var(--green-500); background: var(--surface); box-shadow: 0 0 0 4px rgba(60,148,89,.18);
+}
+.user-chip .avatar { width: 36px; height: 36px; font-size: 11px; }
+
+/* ===== bell: the low-stock alerts as a top-bar dropdown ===== */
+.bell-wrap { position: relative; }
+.notif-menu {
+  position: absolute; right: 0; top: calc(100% + 12px); z-index: 70;
+  width: min(360px, calc(100vw - 24px)); max-height: min(62vh, 480px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  box-shadow: var(--sh-3); padding: 10px;
+}
+.notif-menu-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 6px 10px; border-bottom: 1px solid var(--line-2); margin-bottom: 10px;
+}
+.notif-menu-title {
+  display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+}
+.notif-menu-title svg { width: 14px; height: 14px; color: var(--green-text); }
+.notif-mark-read {
+  font-size: 12px; font-weight: 600; color: var(--green-text);
+  padding: 7px 10px; border-radius: 7px;
+}
+.notif-mark-read:hover { background: var(--green-50); }
+.notif-mark-read:disabled { color: var(--muted); background: none; cursor: default; }
+.notif-goto { cursor: pointer; }
+.notif-goto:hover { border-color: var(--green-500); box-shadow: 0 0 0 3px rgba(60,148,89,.12); }
+.notif-item.is-read { opacity: .6; }
+.notif-item.is-read .ni-title { color: var(--muted); }
+.notif-add { height: 34px; padding: 0 13px; font-size: 12.5px; }
+.notif-menu-foot { display: flex; justify-content: flex-end; padding: 4px 2px 0; }
+
+/* ===== dashboard: search sits beside the Shopping & tasks label ===== */
+.dash-label-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-bottom: -4px; padding: 0 2px;
+}
+.dash-label-row > span:first-child { flex: none; }
+.dash-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dash-search { position: relative; width: min(320px, 100%); }
+.search-box--dash { border-radius: var(--r-sm); }
+.search-box--dash .input { height: 40px; padding: 0 42px 0 38px; font-size: 13.5px; border-radius: var(--r-sm); }
+.search-box--dash > svg { left: 12px; width: 17px; height: 17px; }
+.search-box--dash .input:focus { border-color: transparent; box-shadow: none; }
+.btn-new-sm { height: 40px; padding: 0 14px; font-size: 13px; border-radius: var(--r-sm); }
+.dash-search .search-results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 60;
+  max-height: min(58vh, 420px);
+}
+
+/* breakdown anchors itself to the bottom of the spending layout */
+.breakdown { align-self: end; }
+
+/* ===== login CTA: Google is a green oval, not a white rectangle ===== */
+.btn-google {
+  border-radius: 999px; border: none;
+  background: var(--green-600); color: #fff; height: 50px;
+  box-shadow: 0 10px 22px rgba(44, 119, 73, .28);
+}
+.btn-google:hover { background: var(--green-700); box-shadow: 0 10px 26px rgba(44, 119, 73, .36); }
+.or-line { margin: 8px 0 4px; }
+
+/* ===== small screens ===== */
+@media (max-width: 980px) {
+  .dash-label-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .dash-tools { width: 100%; }
+  .dash-search { width: 100%; }
+}
+@media (max-width: 620px) {
+  .topbar { opacity: 1; }
+  .notif-menu { position: fixed; top: calc(var(--topbar-h) + 6px); right: 12px; left: 12px; width: auto; }
+  .btn-google { height: 48px; }
+  .dash-tools { flex-wrap: nowrap; }
+  .btn-new-sm { flex: none; }
+}
