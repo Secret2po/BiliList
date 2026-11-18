@@ -2287,6 +2287,9 @@ html.theme-switching *::after {
    focus brings it straight back to full strength */
 .topbar { opacity: .93; transition: opacity .25s ease; }
 .topbar:hover, .topbar:focus-within { opacity: 1; }
+/* an open dropdown must not inherit the idle translucency, or the page
+   shows through it (pointer clicks do not always move focus) */
+.topbar.menu-open { opacity: 1; }
 @media (prefers-reduced-transparency: reduce) { .topbar { opacity: 1; } }
 
 /* main tabs scroll sideways instead of wrapping/shattering on narrow screens */

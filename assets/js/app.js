@@ -1667,6 +1667,7 @@
     var next = (force === undefined) ? !open : force;
     pm.classList.toggle('is-open', next);
     $('#btn-profile').setAttribute('aria-expanded', next ? 'true' : 'false');
+    syncTopbarMenus();
     return next;
   }
 
@@ -3935,6 +3936,7 @@
     menu.hidden = false;
     var bell = $('#btn-bell');
     if (bell) bell.setAttribute('aria-expanded', 'true');
+    syncTopbarMenus();
   }
 
   function closeNotifDropdown() {
@@ -3943,6 +3945,18 @@
     menu.hidden = true;
     var bell = $('#btn-bell');
     if (bell) bell.setAttribute('aria-expanded', 'false');
+    syncTopbarMenus();
+  }
+
+  /* the header dims when idle, but a panel hanging out of it must stay
+     fully opaque — otherwise the page bleeds through the dropdown */
+  function syncTopbarMenus() {
+    var tb = $('.topbar');
+    if (!tb) return;
+    var notif = $('#notif-menu');
+    var profile = $('#profile-menu');
+    var open = (notif && !notif.hidden) || (profile && profile.classList.contains('is-open'));
+    tb.classList.toggle('menu-open', !!open);
   }
 
   function toggleNotifDropdown() {
