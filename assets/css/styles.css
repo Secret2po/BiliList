@@ -223,9 +223,10 @@ svg { display: block; }
 
 .btn-signup {
   display: inline-flex; align-items: center; justify-content: center;
-  height: 38px; padding: 0 18px; border-radius: 7px;
+  height: 38px; padding: 0 18px; border-radius: var(--r-pill);
   background: var(--green-600); color: var(--white) !important;
   font-size: 13px; font-weight: 600; box-shadow: var(--sh-1);
+  white-space: nowrap;
   transition: background .15s, box-shadow .15s;
 }
 .btn-signup:hover {
@@ -332,9 +333,16 @@ svg { display: block; }
 .btn-google[hidden] { display: none; }
 .btn-google svg { width: 18px; height: 18px; flex: none; }
 
-.google-signin-button { display: flex; justify-content: center; margin-top: 22px; min-height: 44px; }
+/* The Google iframe is clipped to a pill so the button stays oval in every
+   theme and mode, even if Google renders its own corners as a rectangle. */
+.google-signin-button {
+  display: flex; justify-content: center; margin-top: 22px; min-height: 44px;
+  border-radius: var(--r-pill); overflow: hidden;
+}
 .google-signin-button[hidden] { display: none; }
 .google-signin-button.is-busy { opacity: .6; pointer-events: none; }
+.google-signin-button iframe,
+.google-signin-button > div { border-radius: var(--r-pill) !important; }
 
 .or-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 18px 0 20px; }
 .or-line::before, .or-line::after { content: ""; height: 1px; background: var(--line); flex: 1; }
@@ -2187,6 +2195,9 @@ html.theme-switching *::after {
 :root[data-theme="dark"] .or-line::before,
 :root[data-theme="dark"] .or-line::after { background: var(--line); }
 
+/* the pill survives Google's own light/dark rendering */
+:root[data-theme="dark"] .google-signin-button { border-radius: 999px; overflow: hidden; }
+
 :root[data-theme="dark"] .hero-card {
   background:
     radial-gradient(120% 100% at 8% 0%, #1B3325 0%, rgba(27,51,37,0) 60%),
@@ -2357,7 +2368,8 @@ html.theme-switching *::after {
 /* breakdown anchors itself to the bottom of the spending layout */
 .breakdown { align-self: end; }
 
-/* ===== login CTA: Google is a green oval, not a white rectangle ===== */
+/* ===== login CTAs: Log In / Create Account and Google are ovals ===== */
+#btn-login { border-radius: 999px; }
 .btn-google {
   border-radius: 999px; border: none;
   background: var(--green-600); color: #fff; height: 50px;
@@ -2371,6 +2383,10 @@ html.theme-switching *::after {
   .dash-label-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .dash-tools { width: 100%; }
   .dash-search { width: 100%; }
+}
+@media (max-width: 360px) {
+  .login-top-right { gap: 4px; }
+  .login-top .btn-signup { padding: 0 8px; font-size: 11px; }
 }
 @media (max-width: 620px) {
   .topbar { opacity: 1; }

@@ -4152,6 +4152,7 @@
     $('#view-app').classList.add('hidden');
     $('#view-login').classList.remove('hidden');
     setupGoogleButton();
+    updateGoogleButton();
   }
   function showApp() {
     $('#view-login').classList.add('hidden');
@@ -4187,7 +4188,7 @@
     if (googleWrap) googleWrap.hidden = isVerify || isNewPass || isOnboard || isOnboardPass;
 
     var orLine = $('.or-line');
-    if (orLine) orLine.textContent = isSignup ? 'or sign up with email' : 'or log in with email';
+    if (orLine) orLine.textContent = isSignup ? 'or create an account with Google' : 'or log in with Google';
 
     /* the top-right shortcut mirrors the current step */
     var topLabel = $('#login-top-label');
@@ -4279,6 +4280,9 @@
     var locked = isVerify || isNewPass || isOnboard || isOnboardPass;
     em.readOnly = locked;
     $('#field-email').classList.toggle('is-readonly', locked);
+
+    /* keep the Google button in step with the chosen mode */
+    if (isSignin || isSignup) updateGoogleButton();
 
     clearAuthErrors();
   }
@@ -4530,6 +4534,7 @@
      fallback for browsers where the GIS script cannot load. */
   var googleReady = false;
   var googleInitTried = false;
+  var googleButtonStep = null;   /* which mode the rendered button says */
   var googlePollTimer = null;
   var googlePollTries = 0;
 
@@ -4599,8 +4604,47 @@
     });
   }
 
+  /* Google's own button is the one most people see. Its label follows the
+     log-in / create-account mode, and its shape has to stay a pill in both
+     themes (the wrapper is also clipped in CSS, so a stale Google render
+     cannot turn it into a rectangle). */
+  function googleButtonOptions() {
+    var isSignup = auth.step === 'signup';
+    return {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: isSignup ? 'signup_with' : 'signin_with',
+      shape: 'pill',
+      logo_alignment: 'left',
+      width: googleButtonWidth()
+    };
+  }
+
+  function googleFallbackLabel() {
+    return auth.step === 'signup' ? 'Create account with Google' : 'Log in with Google';
+  }
+
+  function updateGoogleButton() {
+    var custom = $('#btn-google');
+    if (custom) {
+      var label = custom.querySelector('.btn-google-label');
+      if (label) label.textContent = googleFallbackLabel();
+    }
+
+    var host = $('#google-signin-button');
+    if (!host || host.hidden || !googleReady) return;
+    if (googleButtonStep === auth.step) return;
+    try {
+      window.google.accounts.id.renderButton(host, googleButtonOptions());
+      googleButtonStep = auth.step;
+    } catch (e) {
+      /* keep whichever button is already on screen */
+    }
+  }
+
   function setupGoogleButton() {
-    if (googleReady || googleInitTried) return;
+    if (googleInitTried) { updateGoogleButton(); return; }
     if (!$('#view-login') || $('#view-login').classList.contains('hidden')) return;
 
     var host = $('#google-signin-button');
@@ -4625,16 +4669,13 @@
         use_fedcm_for_prompt: true
       });
       host.hidden = false;
-      window.google.accounts.id.renderButton(host, {
-        type: 'standard',
-        theme: 'outline',
-        size: 'large',
-        text: 'continue_with',
-        shape: 'pill',
-        logo_alignment: 'left',
-        width: googleButtonWidth()
-      });
-      if (custom) custom.hidden = true;
+      window.google.accounts.id.renderButton(host, googleButtonOptions());
+      if (custom) {
+        custom.hidden = true;
+        var label = custom.querySelector('.btn-google-label');
+        if (label) label.textContent = googleFallbackLabel();
+      }
+      googleButtonStep = auth.step;
       googleReady = true;
     } catch (e) {
       googleInitTried = false;
@@ -4744,7 +4785,7 @@
       btn.disabled = !!busy;
       btn.classList.toggle('is-busy', !!busy);
       var label = btn.querySelector('.btn-google-label');
-      if (label) label.textContent = busy ? 'Connecting to Google…' : 'Continue with Google';
+      if (label) label.textContent = busy ? 'Connecting to Google…' : googleFallbackLabel();
     }
     var host = $('#google-signin-button');
     if (host) host.classList.toggle('is-busy', !!busy);
