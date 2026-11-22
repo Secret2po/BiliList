@@ -176,10 +176,10 @@
             <label for="f-birthday">Birthday <span class="optional">(optional)</span></label>
             <div class="input-wrap">
               <svg><use href="#i-calendar"/></svg>
-              <input class="input with-icon" type="date" id="f-birthday" autocomplete="bday">
+              <input class="input with-icon" type="date" id="f-birthday" autocomplete="bday" lang="en-US" min="1926-01-01" max="2010-12-31">
             </div>
-            <p class="field-hint">Month / Day / Year</p>
-            <div class="field-error" id="err-birthday">Enter a valid birthday that is not in the future.</div>
+            <p class="field-hint">Month / Day / Year · years 1926–2010</p>
+            <div class="field-error" id="err-birthday">Enter a birthday between 1926 and 2010.</div>
           </div>
 
           <div class="field" id="field-password">
@@ -539,6 +539,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=22"></script>
+<script src="assets/js/app.js?v=23"></script>
 </body>
 </html>

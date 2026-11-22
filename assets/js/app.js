@@ -4372,7 +4372,7 @@
     if (field === 'err-middle') el.textContent = message || 'Use letters only for your middle name.';
     if (field === 'err-last') el.textContent = message || 'Enter your last name.';
     if (field === 'err-suffix') el.textContent = message || 'Use letters, numbers or periods, e.g. Jr. or III.';
-    if (field === 'err-birthday') el.textContent = message || 'Enter a valid birthday that is not in the future.';
+    if (field === 'err-birthday') el.textContent = message || 'Enter a birthday between 1926 and 2010.';
     if (field === 'err-email') el.textContent = message || 'Enter a valid email address, e.g. you@example.com';
     if (field === 'err-pass') el.textContent = message || 'Enter your password.';
     if (field === 'err-pass2') el.textContent = message || 'The two passwords do not match.';
@@ -4442,29 +4442,19 @@
     return '';
   }
 
+  /* birthdays are accepted only from 1926 through 2010 (inclusive) */
+  var BIRTHDAY_MIN = '1926-01-01';
+  var BIRTHDAY_MAX = '2010-12-31';
+
   function birthdayProblem(value) {
     if (!value) return '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Enter a valid birthday.';
     var d = new Date(value + 'T00:00:00');
     if (isNaN(d.getTime())) return 'Enter a valid birthday.';
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (d > today) return 'Birthday cannot be in the future.';
-    if (d.getFullYear() < 1900) return 'Enter a birthday after 1900.';
-    /* minimum age: 8 — keeps impossible/dummy dates out of the form */
-    var cutoff = new Date(today.getFullYear() - 8, today.getMonth(), today.getDate());
-    if (d > cutoff) return 'You must be at least 8 years old.';
+    if (value < BIRTHDAY_MIN || value > BIRTHDAY_MAX) {
+      return 'Enter a birthday between 1926 and 2010.';
+    }
     return '';
-  }
-
-  /* the date input itself blocks anything newer than the minimum age */
-  var BIRTHDAY_MIN_AGE = 8;
-  function maxBirthdayString() {
-    var d = new Date();
-    d.setFullYear(d.getFullYear() - BIRTHDAY_MIN_AGE);
-    var m = String(d.getMonth() + 1).padStart(2, '0');
-    var day = String(d.getDate()).padStart(2, '0');
-    return d.getFullYear() + '-' + m + '-' + day;
   }
 
   function fullNameOf(first, middle, last, suffix) {
@@ -6083,8 +6073,9 @@
   function setBirthdayMax() {
     var input = $('#f-birthday');
     if (!input) return;
-    /* today is also off-limits; the picker stops at the 8th-birthday mark */
-    input.max = maxBirthdayString();
+    /* native picker enforces the same 1926–2010 window as the validator */
+    input.min = BIRTHDAY_MIN;
+    input.max = BIRTHDAY_MAX;
   }
 
   function init() {
