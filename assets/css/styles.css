@@ -2655,3 +2655,68 @@ html.theme-switching *::after {
 :root[data-theme="dark"] .budget-field.is-primary {
   background: rgba(134,214,161,.07); border-color: rgba(134,214,161,.35);
 }
+
+/* ==========================================================================
+   SPENDING VISUALIZATION — chart grid, baseline, limits
+   ========================================================================== */
+.chart-plot { position: relative; margin-top: 18px; }
+.chart-plot .chart-area {
+  position: relative; z-index: 1; margin-top: 0;
+  padding-left: 46px;
+}
+.chart-y {
+  position: absolute; left: 0; top: 0; bottom: 22px; width: 40px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  align-items: flex-end;
+  font-size: 9.5px; color: var(--muted-2); pointer-events: none;
+}
+.chart-lines {
+  position: absolute; left: 46px; right: 0; top: 0; bottom: 22px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  pointer-events: none;
+}
+.chart-lines i { display: block; border-top: 1px dashed var(--line-2); }
+.chart-lines i:last-child { border-top: 1px solid var(--line); }
+.chart-plot .chart-col .stack {
+  flex: 1 1 auto; height: auto; min-height: 0;
+  width: 100%; overflow: hidden;
+}
+.chart-plot .chart-col .seg { min-height: 5px; }
+.chart-plot .chart-col .seg-top { border-radius: 6px 6px 0 0; }
+.chart-plot .chart-col .bar-base {
+  width: 100%; height: 3px; flex: none;
+  border-radius: 2px; background: var(--line-2);
+}
+.chart-plot .chart-col .lbl { font-size: 10px; }
+.chart-plot .chart-col.is-today .lbl { color: var(--green-text); font-weight: 700; }
+.chart-plot .chart-col.is-today .bar-base { background: var(--green-200); }
+.chart-plot .chart-col .val { min-height: 13px; }
+
+/* breakdown dots share the category tone palette */
+.bd-name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.bd-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--tone, var(--muted-2)); }
+
+/* budget cap limits */
+.budget-limit { font-size: 10.5px; color: var(--muted-2); }
+.budget-error {
+  margin: 2px 0 0; font-size: 11px; font-weight: 600;
+  color: var(--danger-text); line-height: 1.3;
+}
+.budget-error[hidden] { display: none; }
+.budget-input .input.is-invalid {
+  border-color: var(--danger-text);
+  box-shadow: 0 0 0 3px rgba(192,69,59,.12);
+}
+@media (max-width: 760px) {
+  .chart-plot .chart-area { padding-left: 38px; gap: 6px; }
+  .chart-y { width: 34px; font-size: 9px; }
+  .chart-lines { left: 38px; }
+}
+@media (max-width: 480px) {
+  .chart-plot .chart-area { padding-left: 34px; gap: 4px; }
+  .chart-y { width: 30px; font-size: 8.5px; }
+  .chart-lines { left: 34px; }
+  .chart-plot .chart-col .lbl { font-size: 9px; }
+  .chart-plot .chart-col .val { font-size: 9px; }
+}
+:root[data-theme="dark"] .chart-lines i:last-child { border-top-color: var(--line); }

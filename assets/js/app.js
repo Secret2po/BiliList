@@ -15,6 +15,9 @@
   var SIDENAV_KEY = 'bililist.sidenav.v1';
   var PURCHASE_KEY = 'bililist.purchases.v1';
   var BUDGET_KEY = 'bililist.budgets.v1';
+  /* Hard ceilings per period. No cap can ever be saved above these values —
+     they keep the chart scales, percentages and totals inside safe ranges. */
+  var BUDGET_MAX = { w1: 10000, m1: 45000, m3: 135000, m6: 270000, y1: 500000 };
 
   /* When a Supabase session is active, this is the source of truth. The
      localStorage prototype state is only used for demo / offline mode. */
@@ -631,7 +634,7 @@
       if (saved && typeof saved === 'object') {
         D.spending.rangeOrder.forEach(function (k) {
           var n = Number(saved[k]);
-          if (isFinite(n) && n > 0) state.budgets[k] = n;
+          if (isFinite(n) && n > 0) state.budgets[k] = Math.min(n, BUDGET_MAX[k]);
         });
       }
     } catch (e) { state.budgets = defaultBudgets(); }
@@ -647,7 +650,8 @@
 
   function budgetFor(key) {
     if (!state.budgets) state.budgets = defaultBudgets();
-    return Number(state.budgets[key]) || D.spending.ranges[key].budget;
+    var n = Number(state.budgets[key]) || D.spending.ranges[key].budget;
+    return Math.min(n, BUDGET_MAX[key]);
   }
 
   /* Older saves stored the aisle as a label and the quantity as free text.
@@ -2114,6 +2118,13 @@
     return id || 'Other';
   }
 
+  /* keeps the breakdown dots in the same colour family as the chart stacks */
+  function toneForCat(name) {
+    if (name === 'Produce') return 'green';
+    if (name === 'Dairy & eggs') return 'gold';
+    return 'wheat';
+  }
+
   function computeBreakdown(key) {
     var groups = {};
     purchasesIn(key).forEach(function (p) {
@@ -2176,7 +2187,8 @@
     var bars = mini.values.map(function (v, i) {
       var cls = i === mini.hot ? 'is-hot' : (v > 0 ? 'is-past' : '');
       var h = v > 0 ? Math.max(6, Math.round((v / max) * 100)) : 2;
-      return '<div class="bar-wrap"><div class="bar ' + cls + '" style="height:' + h + '%"></div>' +
+      return '<div class="bar-wrap" title="' + mini.labels[i] + ': ' + peso(v) + '">' +
+        '<div class="bar ' + cls + '" style="height:' + h + '%"></div>' +
         '<div class="day">' + mini.labels[i] + '</div></div>';
     }).join('');
 
@@ -3152,23 +3164,38 @@
     var r = rangeTotals(key);
     var ch = computeChart(key);
     var totals = ch.labels.map(function (_, i) { return ch.produce[i] + ch.dairy[i] + ch.other[i]; });
-    var max = Math.max.apply(null, totals) || 1;
+    var rawMax = Math.max.apply(null, totals) || 0;
+    /* round the scale up to a tidy number so the bars never touch the ceiling */
+    var step = rawMax <= 100 ? 50 : rawMax <= 500 ? 100 : rawMax <= 2000 ? 500 : 1000;
+    var scale = rawMax > 0 ? Math.ceil(rawMax / step) * step : step;
     var capNames = { w1: 'weekly', m1: 'monthly', m3: '3-month', m6: '6-month', y1: '12-month' };
+    var todayIdx = key === 'w1' ? (new Date().getDay() + 6) % 7 : -1;
 
     var cols = ch.labels.map(function (label, i) {
-      var p = Math.round((ch.produce[i] / max) * 100);
-      var d = Math.round((ch.dairy[i] / max) * 100);
-      var o = Math.round((ch.other[i] / max) * 100);
-      return '<div class="chart-col">' +
-        '<span class="val">' + peso(totals[i]) + '</span>' +
-        '<div class="stack">' +
-          '<div class="seg s3" style="height:' + o + '%"></div>' +
-          '<div class="seg s2" style="height:' + d + '%"></div>' +
-          '<div class="seg s1" style="height:' + p + '%"></div>' +
-        '</div>' +
+      var pv = ch.produce[i], dv = ch.dairy[i], ov = ch.other[i];
+      /* flex-column stacks top-to-bottom, so draw produce first (top segment) */
+      var segs = [];
+      if (pv > 0) segs.push('<div class="seg s1" style="height:' +
+        Math.max(5, Math.round(pv / scale * 100)) + '%" title="Produce: ' + money(pv) + '"></div>');
+      if (dv > 0) segs.push('<div class="seg s2" style="height:' +
+        Math.max(5, Math.round(dv / scale * 100)) + '%" title="Dairy &amp; eggs: ' + money(dv) + '"></div>');
+      if (ov > 0) segs.push('<div class="seg s3" style="height:' +
+        Math.max(5, Math.round(ov / scale * 100)) + '%" title="Everything else: ' + money(ov) + '"></div>');
+      if (segs.length) segs[0] = segs[0].replace('class="seg ', 'class="seg seg-top ');
+      return '<div class="chart-col' + (i === todayIdx ? ' is-today' : '') + '">' +
+        '<span class="val">' + (totals[i] > 0 ? peso(totals[i]) : '') + '</span>' +
+        '<div class="stack">' + segs.join('') + '</div>' +
+        '<div class="bar-base"></div>' +
         '<span class="lbl">' + label + '</span>' +
       '</div>';
     }).join('');
+
+    var chartPlot =
+      '<div class="chart-plot">' +
+        '<div class="chart-y"><span>' + peso(scale) + '</span><span>' + peso(scale / 2) + '</span><span>₱0</span></div>' +
+        '<div class="chart-lines"><i></i><i></i><i></i></div>' +
+        '<div class="chart-area">' + cols + '</div>' +
+      '</div>';
 
     var stats = computeStats(key).map(function (s) {
       return '<div class="stat' + (s.label === 'Budget left' ? ' stat--budget" data-act="edit-budget" role="button" tabindex="0" title="Edit budget caps' : '') + '">' +
@@ -3183,7 +3210,8 @@
     var breakdown = rows.length
       ? rows.map(function (b) {
           return '<div class="breakdown-row">' +
-            '<div class="bd-top"><b>' + esc(b.name) + '</b><span>' + money(b.amount) + '</span></div>' +
+            '<div class="bd-top"><span class="bd-name"><i class="bd-dot tone-' + toneForCat(b.name) + '"></i>' +
+              '<b>' + esc(b.name) + '</b></span><span>' + money(b.amount) + '</span></div>' +
             '<div class="bd-bar"><i style="width:' + b.pct + '%"></i></div>' +
             '<div class="bd-pct">' + b.pct + '% of household spending</div>' +
           '</div>';
@@ -3239,7 +3267,7 @@
               }).join('') +
             '</div>' +
           '</div>' +
-          '<div class="chart-area">' + cols + '</div>' +
+          chartPlot +
           '<div class="legend-row">' +
             '<span><i style="background:var(--green-600)"></i> Produce</span>' +
             '<span><i style="background:var(--green-400)"></i> Dairy &amp; eggs</span>' +
@@ -6298,6 +6326,25 @@
     /* the price capture and budget editor are plain onAppClick dialogs */
     $('#price-modal').addEventListener('click', onAppClick);
     $('#budget-modal').addEventListener('click', onAppClick);
+    /* warn immediately when a cap goes past its safety ceiling */
+    $('#budget-modal').addEventListener('input', function (e) {
+      if (!e.target || !e.target.id || e.target.id.indexOf('budget-') !== 0) return;
+      var k = e.target.id.slice('budget-'.length);
+      if (!(k in BUDGET_MAX)) return;
+      var max = BUDGET_MAX[k];
+      var err = $('#budget-error-' + k);
+      var n = Number(e.target.value);
+      if (e.target.value !== '' && (!isFinite(n) || n <= 0)) {
+        if (err) { err.textContent = 'Enter an amount greater than zero.'; err.hidden = false; }
+        e.target.classList.add('is-invalid');
+      } else if (n > max) {
+        if (err) { err.textContent = 'Maximum allowed is ' + peso(max) + '.'; err.hidden = false; }
+        e.target.classList.add('is-invalid');
+      } else {
+        if (err) { err.hidden = true; err.textContent = ''; }
+        e.target.classList.remove('is-invalid');
+      }
+    });
     $('#cat-modal').addEventListener('click', onCatPanelClick);
     $('#cat-modal').addEventListener('change', onCatPanelChange);
     $('#cat-modal').addEventListener('keydown', onCatPanelKeydown);
@@ -6517,15 +6564,18 @@
     if (!body) return;
     var sp = D.spending;
     body.innerHTML =
-      '<p class="price-hint">Set the cap for each period. Raise the weekly cap whenever your budget changes.</p>' +
+      '<p class="price-hint">Set the cap for each period. Each cap has a maximum to keep your budget data safe.</p>' +
       '<div class="budget-grid">' +
         sp.rangeOrder.map(function (k) {
-          return '<label class="budget-field' + (k === 'w1' ? ' is-primary' : '') + '">' +
-            '<span>' + esc(sp.ranges[k].label) + '</span>' +
+          var max = BUDGET_MAX[k];
+          return '<div class="budget-field' + (k === 'w1' ? ' is-primary' : '') + '">' +
+            '<label for="budget-' + k + '">' + esc(sp.ranges[k].label) + '</label>' +
             '<span class="budget-input"><b>₱</b>' +
-              '<input class="input" id="budget-' + k + '" type="number" min="1" step="1" ' +
+              '<input class="input" id="budget-' + k + '" type="number" min="1" max="' + max + '" step="1" ' +
               'inputmode="numeric" value="' + budgetFor(k) + '"></span>' +
-          '</label>';
+            '<small class="budget-limit">Max ' + peso(max) + '</small>' +
+            '<p class="budget-error" id="budget-error-' + k + '" hidden></p>' +
+          '</div>';
         }).join('') +
       '</div>';
     $('#budget-modal').classList.add('show');
@@ -6536,18 +6586,44 @@
     if (m) m.classList.remove('show');
   }
 
+  function budgetError(k, msg) {
+    var el = $('#budget-error-' + k);
+    if (el) { el.textContent = msg; el.hidden = false; }
+    var input = $('#budget-' + k);
+    if (input) { input.classList.add('is-invalid'); input.focus(); }
+  }
+
+  function clearBudgetErrors() {
+    D.spending.rangeOrder.forEach(function (k) {
+      var el = $('#budget-error-' + k);
+      if (el) { el.hidden = true; el.textContent = ''; }
+      var input = $('#budget-' + k);
+      if (input) input.classList.remove('is-invalid');
+    });
+  }
+
   function confirmBudgets() {
     var sp = D.spending;
     var next = defaultBudgets();
     var bad = null;
+    clearBudgetErrors();
     sp.rangeOrder.forEach(function (k) {
+      if (bad) return;
       var el = $('#budget-' + k);
       if (!el) return;
       var n = Number(el.value);
-      if (!isFinite(n) || n <= 0) { bad = k; return; }
+      var max = BUDGET_MAX[k];
+      if (!isFinite(n) || n <= 0) {
+        budgetError(k, 'Enter an amount greater than zero.');
+        bad = k; return;
+      }
+      if (n > max) {
+        budgetError(k, 'Maximum allowed is ' + peso(max) + '.');
+        bad = k; return;
+      }
       next[k] = Math.round(n);
     });
-    if (bad) { toast('Enter a valid amount for ' + sp.ranges[bad].label); return; }
+    if (bad) return;
     state.budgets = next;
     persistBudgets();
     closeBudgetModal();
