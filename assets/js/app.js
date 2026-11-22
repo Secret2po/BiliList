@@ -3455,7 +3455,8 @@
       return;
     }
 
-    /* in cloud mode, write the invite and email a branded button */
+    /* in cloud mode, insert the invite — the database trigger emails it and
+       files an in-app Notification, so no Edge Function / CLI is needed */
     if (cloudMode() && S.client) {
       S.client.from('workspace_invites').insert({
         workspace_id: cloud.workspaceId,
@@ -3464,15 +3465,10 @@
         invited_by: state.user ? state.user.id : null
       }).select('*').single().then(function (r) {
         if (r.error) throw r.error;
-        var token = r.data.token;
-        var url = APP_URL + '?invite=' + encodeURIComponent(token) + '#/dashboard';
-        state.pending.push({ email: email, role: role, token: token, id: r.data.id, created_at: r.data.created_at });
+        state.pending.push({ email: email, role: role, token: r.data.token, id: r.data.id, created_at: r.data.created_at });
         renderDrawer();
-        toast('Invite created — sending email…');
-        return sendInviteEmail(email, role, ws.name, me.name, url);
-      }).then(function (r) {
-        if (r && r.sent) toast('Invite emailed to ' + email);
-        else toast('Invite created — email delivery is not configured yet');
+        toast('Invite sent to ' + email + ' — check their inbox');
+        runCloudRefresh();
       }).catch(function (err) {
         cloudError('Could not send that invite', err);
       });
@@ -3502,14 +3498,17 @@
 
     /* find the invite details in the snapshot if they are visible */
     if (S.client) {
-      S.client.from('workspace_invites').select('role,email,status,workspace_id,workspaces(name),profiles:invited_by(full_name)')
+      S.client.from('workspace_invites').select('role,email,status,workspace_id,invited_by')
         .eq('token', token).maybeSingle().then(function (r) {
           if (r && r.data && body) {
             var d = r.data;
-            var ws = d.workspaces || {};
+            /* resolve the names separately so the invite screen still works
+               even if PostgREST relationship embedding is not configured */
+            var wsName = (state.workspaces.filter(function (w) { return w.id === d.workspace_id; })[0] || {}).name || 'a BiliLIST household';
+            var inviterName = (state.members.filter(function (m) { return m.id === d.invited_by; })[0] || {}).name || 'A household member';
             body.innerHTML =
               '<div class="invite-hero">' + icon('users') +
-                '<p><b>' + esc((d.profiles && d.profiles.full_name) || 'A household member') + '</b> invited <b>' + esc(d.email) + '</b> to join <b>' + esc(ws.name || 'a BiliLIST household') + '</b> as <b>' + esc(d.role) + '</b>.</p>' +
+                '<p><b>' + esc(inviterName) + '</b> invited <b>' + esc(d.email) + '</b> to join <b>' + esc(wsName) + '</b> as <b>' + esc(d.role) + '</b>.</p>' +
               '</div>' +
               '<p class="invite-status" id="invite-status"></p>';
           }
@@ -3584,20 +3583,6 @@
     });
   }
 
-  /* Calls the invite-member Edge Function (Brevo) so the recipient gets a
-     real email with one button that opens the accept/reject screen. */
-  function sendInviteEmail(email, role, workspaceName, inviterName, inviteUrl) {
-    if (!S.client || typeof S.client.functions.invoke !== 'function') return Promise.resolve(null);
-    return S.client.functions.invoke('invite-member', {
-      body: { email: email, role: role, workspaceName: workspaceName, inviterName: inviterName, inviteUrl: inviteUrl }
-    }).then(function (r) {
-      if (r && r.error) throw r.error;
-      return r && r.data;
-    }).catch(function (e) {
-      console.warn('Invite email failed', e);
-      return null;
-    });
-  }
 
   function newPantryItem() {
     var rawName = prompt('What did you add to the pantry?', '');
@@ -6383,13 +6368,13 @@
       var resendEmail = el.dataset.resend;
       var invite = state.pending.filter(function (i) { return i.email.toLowerCase() === resendEmail.toLowerCase(); })[0];
       var token = invite && invite.token;
-      if (cloudMode() && token) {
-        var url = APP_URL + '?invite=' + encodeURIComponent(token) + '#/dashboard';
-        var wsName = activeWorkspace().name;
-        var meName = you().name;
+      if (cloudMode() && token && S.client) {
         toast('Re-sending invite…');
-        sendInviteEmail(resendEmail, invite.role || 'editor', wsName, meName, url).then(function (r) {
-          toast(r && r.sent ? 'Invite re-sent to ' + resendEmail : 'Email delivery is not configured yet');
+        S.client.rpc('resend_invite_email', { p_token: token }).then(function (r) {
+          if (r && r.error) throw r.error;
+          toast('Invite re-sent to ' + resendEmail);
+        }).catch(function (e) {
+          cloudError('Could not resend that invite', e);
         });
       } else {
         toast('Invite re-sent to ' + resendEmail);
