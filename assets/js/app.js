@@ -4396,9 +4396,28 @@
     box.hidden = false;
   }
 
-  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  /* Email: a real address needs a recognised ending. "gmail.co" is a common
+     typo of gmail.com, so bare ".co" is deliberately not accepted. */
+  var EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  var EMAIL_TLDS = [
+    'com','org','net','edu','gov','mil','int','info','biz','name','me','io','tv','app','dev','xyz','online','site','tech','store','blog','cloud','shop','live','world','today',
+    'ph','uk','us','ca','au','jp','de','fr','in','sg','my','id','nz','ie','ch','nl','it','es','kr','cn','br','mx','za','se','no','dk','fi','be','at','pl'
+  ];
+  var EMAIL_2PART_TLDS = ['co.uk','com.ph','org.ph','net.ph','edu.ph','gov.ph','com.au','co.jp','co.nz','co.in','com.sg','com.my','com.mx','com.br'];
 
-  function validEmail(v) { return EMAIL_RE.test(String(v || '').trim()); }
+  function emailProblem(v) {
+    var s = String(v || '').trim();
+    if (!EMAIL_SHAPE.test(s)) return 'Enter a valid email address, e.g. you@example.com';
+    var domain = s.slice(s.lastIndexOf('@') + 1).toLowerCase();
+    var parts = domain.split('.');
+    var tld = parts.slice(1).join('.');
+    if (EMAIL_2PART_TLDS.indexOf(tld) !== -1) return '';
+    if (parts.length === 2 && EMAIL_TLDS.indexOf(tld) !== -1) return '';
+    if (/^gmail\.co$/i.test(domain)) return 'Did you mean gmail.com?';
+    return 'Enter a valid email ending, e.g. .com, .org or .ph';
+  }
+
+  function validEmail(v) { return !emailProblem(v); }
 
   function passwordProblems(pw) {
     var out = [];
@@ -4418,27 +4437,40 @@
      sign-up form uses first / optional middle / last name instead of a
      nickname. The check is deliberately permissive about accents, spaces,
      hyphens and apostrophes. */
-  var NAME_RE = /^[\p{L}\p{M}' .-]+$/u;
+  var NAME_RE = /^[\p{L}\p{M}][\p{L}\p{M}' .-]*[\p{L}\p{M}.]$/u;
+  var NAME_MAX = 30;
 
   function nameProblem(value, label, required) {
-    var v = String(value || '').trim();
+    var raw = String(value == null ? '' : value);
+    if (!raw) return required === false ? '' : 'Enter your ' + label + '.';
+    /* a space is not a name — and no leading/trailing padding either */
+    if (raw !== raw.trim()) return 'Remove the space at the start or end of your ' + label + '.';
+    var v = raw;
     if (!v) return required === false ? '' : 'Enter your ' + label + '.';
-    if (v.length > 60) return 'Keep your ' + label + ' under 60 characters.';
+    if (v.length > NAME_MAX) return 'Keep your ' + label + ' under ' + NAME_MAX + ' characters.';
     if (v.length < 2 && required !== false) return 'Your ' + label + ' must be at least 2 characters.';
+    if (/\s{2,}/.test(v)) return 'Use a single space between words in your ' + label + '.';
     if (/\d/.test(v)) return 'Names cannot include numbers.';
-    if (!NAME_RE.test(v)) return 'Use letters, spaces, hyphens or apostrophes only.';
+    /* must start and end with a real letter (single letters allowed as middle) */
+    if (!/^\p{L}\p{M}*$/u.test(v[0]) || !/^\p{L}\p{M}*$/u.test(v[v.length - 1])) {
+      return 'Your ' + label + ' must start and end with a letter.';
+    }
+    if (!NAME_RE.test(v) && v.length !== 1) return 'Use letters, spaces, hyphens or apostrophes only.';
     return '';
   }
 
   /* Suffix: Jr., Sr., II, III, IV, letters, periods and optional digits —
      deliberately its own rule because suffixes are not plain names. */
-  var SUFFIX_RE = /^[\p{L}\p{M}0-9.' -]+$/u;
+  var SUFFIX_RE = /^[\p{L}\p{M}0-9.']+$/u;
+  var SUFFIX_MAX = 10;
 
   function suffixProblem(value) {
-    var v = String(value || '').trim();
-    if (!v) return '';
-    if (v.length > 12) return 'Keep your suffix under 12 characters.';
-    if (!SUFFIX_RE.test(v)) return 'Use letters, numbers, periods or hyphens, e.g. Jr. or III.';
+    var raw = String(value == null ? '' : value);
+    if (!raw) return '';
+    if (raw !== raw.trim()) return 'Remove the space at the start or end of your suffix.';
+    var v = raw;
+    if (v.length > SUFFIX_MAX) return 'Keep your suffix under ' + SUFFIX_MAX + ' characters.';
+    if (!SUFFIX_RE.test(v)) return 'Use letters, numbers or periods only, e.g. Jr. or III.';
     return '';
   }
 
@@ -5277,10 +5309,11 @@
     e.preventDefault();
     clearAuthErrors();
 
-    var first = ($('#f-first').value || '').trim();
-    var middle = ($('#f-middle').value || '').trim();
-    var last = ($('#f-last').value || '').trim();
-    var suffix = ($('#f-suffix').value || '').trim().replace(/\s{2,}/g, ' ');
+    /* keep the raw values so nameProblem can catch leading/trailing spaces */
+    var first = $('#f-first').value || '';
+    var middle = $('#f-middle').value || '';
+    var last = $('#f-last').value || '';
+    var suffix = $('#f-suffix').value || '';
     var birthday = readBirthday();
     var email = ($('#f-email').value || '').trim();
     var pw = ($('#f-pass').value || '').trim();
@@ -5304,13 +5337,14 @@
     }
 
     function details() {
+      var f = first.trim(), m = middle.trim(), l = last.trim(), s = suffix.trim();
       return {
-        firstName: first,
-        middleName: middle,
-        lastName: last,
-        suffix: suffix,
+        firstName: f,
+        middleName: m,
+        lastName: l,
+        suffix: s,
         birthday: birthday,
-        fullName: fullNameOf(first, middle, last, suffix)
+        fullName: fullNameOf(f, m, l, s)
       };
     }
 
@@ -5349,7 +5383,8 @@
       return;
     }
 
-    if (!validEmail(email)) { authError('err-email'); $('#f-email').focus(); return; }
+    var emailErr = emailProblem(email);
+    if (emailErr) { authError('err-email', emailErr); $('#f-email').focus(); return; }
 
     if (auth.step === 'signup') {
       if (!validateNameFields()) return;
@@ -5481,7 +5516,8 @@
       if (fg) {
         e.preventDefault();
         var em = ($('#f-email').value || '').trim();
-        if (!validEmail(em)) { authError('err-email'); $('#f-email').focus(); return; }
+        var emErr = emailProblem(em);
+        if (emErr) { authError('err-email', emErr); $('#f-email').focus(); return; }
         startRecovery(em);
         return;
       }
