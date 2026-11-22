@@ -5595,6 +5595,17 @@
     }
 
     return loadProfile(user).then(function (profile) {
+      /* E-mail sign-ups already gave their name and password on the form and
+         have just proved the address with the code — they go straight in.
+         Only a Google account that has not finished onboarding is held back
+         here (its password_set flag lives in the metadata). Without this
+         branch a verified e-mail user was sent to the Google onboarding
+         screen, which then demanded a second code. */
+      if (provider === 'email') {
+        onSignedIn(user, opts);
+        return;
+      }
+
       /* Deferred creation means no profile row exists until the person enters
          the app. Two cases with no row:
            - onboarding details are already in metadata -> verified, let them in
@@ -5617,7 +5628,7 @@
     }).catch(function () {
       /* A profile read failure must not create a back door past onboarding. */
       var meta = (user && user.user_metadata) || {};
-      if (meta.first_name && meta.last_name && meta.password_set) onSignedIn(user, opts);
+      if (provider === 'email' || (meta.first_name && meta.last_name && meta.password_set)) onSignedIn(user, opts);
       else showOnboarding(user);
     });
   }
