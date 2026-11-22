@@ -6525,6 +6525,51 @@
     }
   }
 
+  /* Numeric fields use text + inputmode so every keystroke can be inspected.
+     A digit that would take the value past the ceiling is discarded, so the
+     number physically stops at the limit instead of only showing an error. */
+  function bindNumberLimit(input, max, decimals) {
+    if (!input) return;
+    decimals = decimals || 0;
+    input.setAttribute('inputmode', decimals ? 'decimal' : 'numeric');
+
+    function clean(raw) {
+      var s = String(raw == null ? '' : raw);
+      if (decimals) {
+        s = s.replace(/[^0-9.]/g, '');
+        var dot = s.indexOf('.');
+        if (dot !== -1) {
+          s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+          s = s.slice(0, dot + 1) + s.slice(dot + 1).slice(0, decimals);
+        }
+      } else {
+        s = s.replace(/[^0-9]/g, '');
+      }
+      s = s.replace(/^0+(?=\d)/, '');      /* no "00012" */
+      if (s === '' || s === '.') return s;
+      var n = Number(s);
+      if (!isFinite(n)) return '';
+      if (n > max) return String(max);     /* <- hard stop */
+      return s;
+    }
+
+    /* block unwanted characters before they are entered */
+    input.addEventListener('keydown', function (e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return;                    /* navigation keys */
+      var allowed = decimals ? /^[0-9.]$/ : /^[0-9]$/;
+      if (!allowed.test(e.key)) e.preventDefault();
+    });
+    /* clamp pasted / autofilled / spinner values too */
+    input.addEventListener('input', function () {
+      var c = clean(input.value);
+      if (c !== input.value) {
+        input.value = c;
+        try { input.setSelectionRange(c.length, c.length); } catch (err) { /* ignore */ }
+      }
+    });
+  }
+
   function openPriceModal(item) {
     var body = $('#price-body');
     if (!body) return;
@@ -6540,9 +6585,10 @@
         '. Maximum ' + peso(PRICE_MAX) + ' per item.</p>' +
       '<label class="pop-label" for="price-input">Price paid (₱)</label>' +
       '<div class="price-field"><span class="cur">₱</span>' +
-        '<input class="input" id="price-input" type="number" min="0.01" max="' + PRICE_MAX + '" step="0.01" ' +
-        'inputmode="decimal" placeholder="0.00" autocomplete="off"></div>' +
+        '<input class="input" id="price-input" type="text" inputmode="decimal" ' +
+        'maxlength="8" placeholder="0.00" autocomplete="off"></div>' +
       '<p class="price-error" id="price-error" hidden></p>';
+    bindNumberLimit($('#price-input'), PRICE_MAX, 2);
     $('#price-modal').classList.add('show');
     setTimeout(function () {
       var el = $('#price-input');
@@ -6610,13 +6656,16 @@
           return '<div class="budget-field' + (k === 'w1' ? ' is-primary' : '') + '">' +
             '<label for="budget-' + k + '">' + esc(sp.ranges[k].label) + '</label>' +
             '<span class="budget-input"><b>₱</b>' +
-              '<input class="input" id="budget-' + k + '" type="number" min="1" max="' + max + '" step="1" ' +
-              'inputmode="numeric" value="' + budgetFor(k) + '"></span>' +
+              '<input class="input" id="budget-' + k + '" type="text" inputmode="numeric" ' +
+              'maxlength="' + String(max).length + '" value="' + budgetFor(k) + '"></span>' +
             '<small class="budget-limit">Max ' + peso(max) + '</small>' +
             '<p class="budget-error" id="budget-error-' + k + '" hidden></p>' +
           '</div>';
         }).join('') +
       '</div>';
+    sp.rangeOrder.forEach(function (k) {
+      bindNumberLimit($('#budget-' + k), BUDGET_MAX[k], 0);
+    });
     $('#budget-modal').classList.add('show');
   }
 
