@@ -68,62 +68,6 @@ $$;
 revoke all on function public.email_in_use(text) from public;
 grant execute on function public.email_in_use(text) to anon, authenticated;
 
--- Accept or reject an invite by its emailed token. Runs as the table owner so
--- a person who is not yet a workspace member can join through the link.
--- Rejecting does not add them to the household; accepting is idempotent.
-create or replace function public.respond_to_invite(p_token text, p_accept boolean)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_invite public.workspace_invites;
-  v_email text;
-begin
-  if auth.uid() is null then
-    raise exception 'Not signed in';
-  end if;
-  select email into v_email from auth.users where id = auth.uid();
-
-  select * into v_invite from public.workspace_invites where token = p_token;
-  if not found then
-    raise exception 'Invitation not found';
-  end if;
-  if v_invite.status <> 'pending' then
-    raise exception 'This invitation was already answered';
-  end if;
-  if v_invite.created_at < now() - interval '7 days' then
-    update public.workspace_invites set status = 'expired', responded_at = now() where id = v_invite.id;
-    raise exception 'This invitation has expired';
-  end if;
-  if lower(coalesce(v_email, '')) <> lower(v_invite.email) then
-    raise exception 'This invitation was sent to a different email address';
-  end if;
-
-  update public.workspace_invites
-    set status = case when p_accept then 'accepted' else 'rejected' end,
-        responded_at = now()
-    where id = v_invite.id;
-
-  if p_accept then
-    insert into public.workspace_members (workspace_id, user_id, role, online)
-    values (v_invite.workspace_id, auth.uid(), v_invite.role, true)
-    on conflict (workspace_id, user_id) do update set role = excluded.role;
-
-    insert into public.activity (workspace_id, user_id, text)
-    values (v_invite.workspace_id, auth.uid(), 'joined the household');
-
-    return jsonb_build_object('ok', true, 'workspace_id', v_invite.workspace_id, 'role', v_invite.role);
-  end if;
-
-  return jsonb_build_object('ok', true, 'rejected', true);
-end;
-$$;
-
-revoke all on function public.respond_to_invite(text, boolean) from public;
-grant execute on function public.respond_to_invite(text, boolean) to authenticated;
-
 -- --------------------------------------------------------------------------
 --  3. Tables
 -- --------------------------------------------------------------------------
@@ -301,6 +245,64 @@ where p.ctid = r.ctid and r.rn > 1;
 
 create unique index if not exists pantry_workspace_name_key
   on public.pantry (workspace_id, lower(name));
+
+-- --------------------------------------------------------------------------
+--  Invite response (must come after the tables it references)
+--  Accept or reject an invite by its emailed token. Runs as the table owner so
+--  a person who is not yet a workspace member can join through the link.
+-- --------------------------------------------------------------------------
+create or replace function public.respond_to_invite(p_token text, p_accept boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_invite record;
+  v_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  select email into v_email from auth.users where id = auth.uid();
+
+  select * into v_invite from public.workspace_invites where token = p_token;
+  if not found then
+    raise exception 'Invitation not found';
+  end if;
+  if v_invite.status <> 'pending' then
+    raise exception 'This invitation was already answered';
+  end if;
+  if v_invite.created_at < now() - interval '7 days' then
+    update public.workspace_invites set status = 'expired', responded_at = now() where id = v_invite.id;
+    raise exception 'This invitation has expired';
+  end if;
+  if lower(coalesce(v_email, '')) <> lower(v_invite.email) then
+    raise exception 'This invitation was sent to a different email address';
+  end if;
+
+  update public.workspace_invites
+    set status = case when p_accept then 'accepted' else 'rejected' end,
+        responded_at = now()
+    where id = v_invite.id;
+
+  if p_accept then
+    insert into public.workspace_members (workspace_id, user_id, role, online)
+    values (v_invite.workspace_id, auth.uid(), v_invite.role, true)
+    on conflict (workspace_id, user_id) do update set role = excluded.role;
+
+    insert into public.activity (workspace_id, user_id, text)
+    values (v_invite.workspace_id, auth.uid(), 'joined the household');
+
+    return jsonb_build_object('ok', true, 'workspace_id', v_invite.workspace_id, 'role', v_invite.role);
+  end if;
+
+  return jsonb_build_object('ok', true, 'rejected', true);
+end;
+$$;
+
+revoke all on function public.respond_to_invite(text, boolean) from public;
+grant execute on function public.respond_to_invite(text, boolean) to authenticated;
 
 -- --------------------------------------------------------------------------
 --  4. Helper functions used by the row level security policies
