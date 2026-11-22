@@ -46,6 +46,29 @@ drop table if exists public.password_registry;
 drop table if exists public.app_secrets;
 
 -- --------------------------------------------------------------------------
+--  2b. Email availability
+--  With "Confirm email" on, Supabase deliberately returns a success-shaped
+--  response when an email is already registered (to stop account enumeration),
+--  so the client cannot tell a duplicate from a new sign-up. This security-
+--  definer function lets the app check auth.users and reject duplicates up
+--  front. It returns only a boolean — no other user data is exposed.
+-- --------------------------------------------------------------------------
+create or replace function public.email_in_use(p_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from auth.users where lower(email) = lower(trim(coalesce(p_email, '')))
+  );
+$$;
+
+revoke all on function public.email_in_use(text) from public;
+grant execute on function public.email_in_use(text) to anon, authenticated;
+
+-- --------------------------------------------------------------------------
 --  3. Tables
 -- --------------------------------------------------------------------------
 create table if not exists public.profiles (

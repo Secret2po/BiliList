@@ -4611,6 +4611,16 @@
   }
 
   /* ---------------------------------------------------------- supabase ops */
+  /* Boolean-only lookup of whether an email already has an account.
+     If the RPC has not been deployed yet, fall back to letting Supabase
+     handle it (it still blocks a real duplicate server-side). */
+  function emailInUse(email) {
+    if (!S.client) return Promise.resolve(false);
+    return S.client.rpc('email_in_use', { p_email: email })
+      .then(function (r) { return !!(r && r.data); })
+      .catch(function () { return false; });
+  }
+
   var APP_URL = 'https://secret2po.github.io/BiliList/';
   function redirectTo() {
     /* On the deployed Pages site the app lives at /BiliList/ — using the
@@ -5062,7 +5072,18 @@
   function signUpWithPassword(details, email, pw) {
     if (!S.client) { signInDemo(); return; }
 
-    (function () {
+    /* Supabase masks duplicate emails as a success when confirmation is on,
+       so ask the server first whether this address is already registered. */
+    emailInUse(email).then(function (taken) {
+      if (taken) {
+        authError('err-email', 'An account already uses this email. Sign in instead.');
+        $('#f-email').focus();
+        return;
+      }
+      doSignUp();
+    });
+
+    function doSignUp() {
       var data = {
         first_name: details.firstName,
         middle_name: details.middleName || '',
@@ -5103,7 +5124,7 @@
         authNote('Account created. We emailed a verification message to ' + email + '. Enter the code, or open the confirmation link in that email.', 'ok');
         $('#f-code').focus();
       }).catch(function (e) { authError('err-pass', e.message); });
-    })();
+    }
   }
 
   function enterApp(user, opts) {
