@@ -2500,3 +2500,15 @@ html.theme-switching *::after {
 @media (prefers-reduced-motion: reduce) {
   .sidenav, .sidenav-toggle-ico, .sidenav-item, .sidenav-label { transition: none; }
 }
+
+/* ==========================================================================
+   Birthday: fixed Month / Day / Year selects (locale-independent)
+   ========================================================================== */
+.bday-row { display: flex; gap: 8px; }
+.bday-select {
+  flex: 1; min-width: 0; height: 50px; padding: 0 10px;
+  font-size: 14px; color: var(--ink); cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+}
+.bday-select:invalid, .bday-select[value=""] { color: var(--muted); }
+.bday-select:focus { border-color: var(--green-500); }

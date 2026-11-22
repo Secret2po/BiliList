@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=18">
+<link rel="stylesheet" href="assets/css/styles.css?v=19">
 </head>
 <body>
 
@@ -173,10 +173,29 @@
           </div>
 
           <div class="field" id="field-birthday" hidden>
-            <label for="f-birthday">Birthday <span class="optional">(optional)</span></label>
-            <div class="input-wrap">
-              <svg><use href="#i-calendar"/></svg>
-              <input class="input with-icon" type="date" id="f-birthday" autocomplete="bday" lang="en-US" min="1926-01-01" max="2010-12-31">
+            <label>Birthday <span class="optional">(optional)</span></label>
+            <div class="bday-row" role="group" aria-label="Birthday in month, day, year order">
+              <select class="input bday-select" id="f-bday-month" aria-label="Month">
+                <option value="">Month</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+              <select class="input bday-select" id="f-bday-day" aria-label="Day">
+                <option value="">Day</option>
+              </select>
+              <select class="input bday-select" id="f-bday-year" aria-label="Year">
+                <option value="">Year</option>
+              </select>
             </div>
             <p class="field-hint">Month / Day / Year · years 1926–2010</p>
             <div class="field-error" id="err-birthday">Enter a birthday between 1926 and 2010.</div>
@@ -191,7 +210,7 @@
                 <svg><use href="#i-eye"/></svg>
               </button>
             </div>
-            <p class="field-hint" id="pass-hint">8 characters minimum. Your password must not be used by any other account.</p>
+            <p class="field-hint" id="pass-hint">8 characters minimum, with at least one letter and one number.</p>
             <div class="field-error" id="err-pass">Enter your password.</div>
           </div>
 
@@ -539,6 +558,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=23"></script>
+<script src="assets/js/app.js?v=24"></script>
 </body>
 </html>

@@ -4296,7 +4296,7 @@
       sub.textContent = 'Use your full name so your household knows who you are. We will email a 6-digit code to verify your address.';
       btn.querySelector('span').textContent = 'Create account';
       label.textContent = 'Password';
-      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      hint.textContent = '8 characters minimum, with at least one letter and one number.';
       $('#f-pass').placeholder = 'At least 8 characters';
       $('#auth-secondary').innerHTML = '<span>Already have an account?</span> <a class="link-green" href="#" id="link-signin">Sign in</a>';
     } else if (isVerify) {
@@ -4324,7 +4324,7 @@
         : 'Choose a password so you can also log in with the email form.';
       btn.querySelector('span').textContent = 'Create account';
       label.textContent = 'Password';
-      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      hint.textContent = '8 characters minimum, with at least one letter and one number.';
       $('#f-pass').placeholder = 'At least 8 characters';
       $('#auth-secondary').innerHTML = '<span>Not you?</span> <a class="link-green" href="#" id="link-cancel-onboard">Sign out</a>';
     } else {
@@ -4332,7 +4332,7 @@
       sub.textContent = 'Your code checked out. Pick a new password for your account.';
       btn.querySelector('span').textContent = 'Save password';
       label.textContent = 'New password';
-      hint.textContent = '8 characters minimum. Your password must not be used by any other account.';
+      hint.textContent = '8 characters minimum, with at least one letter and one number.';
       $('#auth-secondary').innerHTML = '';
     }
 
@@ -4352,7 +4352,7 @@
     ['err-first', 'err-middle', 'err-last', 'err-suffix', 'err-birthday', 'err-email', 'err-pass', 'err-pass2', 'err-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('show');
     });
-    ['f-first', 'f-middle', 'f-last', 'f-suffix', 'f-birthday', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+    ['f-first', 'f-middle', 'f-last', 'f-suffix', 'f-bday-month', 'f-bday-day', 'f-bday-year', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
       var el = $('#' + id); if (el) el.classList.remove('invalid');
     });
     var note = $('#auth-note');
@@ -4365,7 +4365,7 @@
     var input = {
       'err-first': 'f-first', 'err-middle': 'f-middle', 'err-last': 'f-last',
       'err-suffix': 'f-suffix',
-      'err-birthday': 'f-birthday', 'err-email': 'f-email',
+      'err-birthday': 'f-bday-month', 'err-email': 'f-email',
       'err-pass': 'f-pass', 'err-pass2': 'f-pass2', 'err-code': 'f-code'
     }[field];
     if (field === 'err-first') el.textContent = message || 'Enter your first name.';
@@ -4445,6 +4445,40 @@
   /* birthdays are accepted only from 1926 through 2010 (inclusive) */
   var BIRTHDAY_MIN = '1926-01-01';
   var BIRTHDAY_MAX = '2010-12-31';
+
+  /* a fixed Month / Day / Year picker — the native <input type=date> follows
+     the device locale (it showed 29-Dec-1999 on some phones), so three plain
+     selects keep one format everywhere */
+  function initBirthdaySelects() {
+    var day = $('#f-bday-day');
+    var year = $('#f-bday-year');
+    if (day) {
+      var d = '<option value="">Day</option>';
+      for (var i = 1; i <= 31; i++) d += '<option value="' + String(i).padStart(2, '0') + '">' + i + '</option>';
+      day.innerHTML = d;
+    }
+    if (year) {
+      var y = '<option value="">Year</option>';
+      for (var n = 2010; n >= 1926; n--) y += '<option value="' + n + '">' + n + '</option>';
+      year.innerHTML = y;
+    }
+  }
+
+  function readBirthday() {
+    var m = $('#f-bday-month'), d = $('#f-bday-day'), y = $('#f-bday-year');
+    if (!m || !d || !y) return '';
+    if (!m.value || !d.value || !y.value) return '';
+    return y.value + '-' + m.value + '-' + d.value;
+  }
+
+  function setBirthday(value) {
+    var parts = String(value || '').split('-');
+    var m = $('#f-bday-month'), d = $('#f-bday-day'), y = $('#f-bday-year');
+    if (!m || !d || !y) return;
+    m.value = parts.length === 3 ? parts[1] : '';
+    d.value = parts.length === 3 ? parts[2] : '';
+    y.value = parts.length === 3 ? parts[0] : '';
+  }
 
   function birthdayProblem(value) {
     if (!value) return '';
@@ -4553,18 +4587,6 @@
   }
 
   /* ---------------------------------------------------------- supabase ops */
-  /* One round trip: is this password already in use, and what is the
-     fingerprint the sign-up trigger needs? */
-  function claimPassword(pw) {
-    if (!S.client) return Promise.resolve({ taken: false, fingerprint: null });
-    return S.client.rpc('password_claim', { p_password: pw })
-      .then(function (r) {
-        var d = (r && r.data) || {};
-        return { taken: !!d.taken, fingerprint: d.fingerprint || null };
-      })
-      .catch(function () { return { taken: false, fingerprint: null }; });
-  }
-
   var APP_URL = 'https://secret2po.github.io/BiliList/';
   function redirectTo() {
     /* On the deployed Pages site the app lives at /BiliList/ — using the
@@ -5011,12 +5033,7 @@
   function signUpWithPassword(details, email, pw) {
     if (!S.client) { signInDemo(); return; }
 
-    claimPassword(pw).then(function (claim) {
-      if (claim.taken) {
-        authError('err-pass', 'That password is already used by another account. Please pick a different one.');
-        return;
-      }
-
+    (function () {
       var data = {
         first_name: details.firstName,
         middle_name: details.middleName || '',
@@ -5025,7 +5042,6 @@
         full_name: details.fullName,
         birthday: details.birthday || ''
       };
-      if (claim.fingerprint) data.password_fingerprint = claim.fingerprint;
 
       S.client.auth.signUp({
         email: email,
@@ -5034,9 +5050,7 @@
       }).then(function (r) {
         if (r.error) {
           var m = r.error.message || '';
-          if (/PASSWORD_ALREADY_IN_USE/i.test(m)) {
-            authError('err-pass', 'That password is already used by another account. Please pick a different one.');
-          } else if (/already registered|duplicate/i.test(m)) {
+          if (/already registered|duplicate/i.test(m)) {
             authError('err-email', 'An account already uses this email. Sign in instead.');
           } else {
             authError('err-pass', m);
@@ -5060,7 +5074,7 @@
         authNote('Account created. We emailed a verification message to ' + email + '. Enter the code, or open the confirmation link in that email.', 'ok');
         $('#f-code').focus();
       }).catch(function (e) { authError('err-pass', e.message); });
-    });
+    })();
   }
 
   function enterApp(user, opts) {
@@ -5237,7 +5251,7 @@
     $('#f-middle').value = middle;
     $('#f-last').value = last;
     $('#f-suffix').value = suffix;
-    $('#f-birthday').value = meta.birthday || '';
+    setBirthday(meta.birthday || '');
     $('#f-email').value = email;
     $('#f-pass').value = '';
     $('#f-pass2').value = '';
@@ -5267,7 +5281,7 @@
     var middle = ($('#f-middle').value || '').trim();
     var last = ($('#f-last').value || '').trim();
     var suffix = ($('#f-suffix').value || '').trim().replace(/\s{2,}/g, ' ');
-    var birthday = ($('#f-birthday').value || '').trim();
+    var birthday = readBirthday();
     var email = ($('#f-email').value || '').trim();
     var pw = ($('#f-pass').value || '').trim();
     var pw2 = ($('#f-pass2').value || '').trim();
@@ -5285,7 +5299,7 @@
       var sp = suffixProblem(suffix);
       if (sp) { authError('err-suffix', sp); $('#f-suffix').focus(); return false; }
       var bp = birthdayProblem(birthday);
-      if (bp) { authError('err-birthday', bp); $('#f-birthday').focus(); return false; }
+      if (bp) { authError('err-birthday', bp); $('#f-bday-month').focus(); return false; }
       return true;
     }
 
@@ -6070,18 +6084,10 @@
   }
 
   /* =============================== INIT ================================== */
-  function setBirthdayMax() {
-    var input = $('#f-birthday');
-    if (!input) return;
-    /* native picker enforces the same 1926–2010 window as the validator */
-    input.min = BIRTHDAY_MIN;
-    input.max = BIRTHDAY_MAX;
-  }
-
   function init() {
     load();
     state.guideDismissed = readGuideDismissed();
-    setBirthdayMax();
+    initBirthdaySelects();
     bindTheme();
     bindSidenav();
     applyTheme(currentTheme(), { persist: false });

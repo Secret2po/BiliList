@@ -30,135 +30,20 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- --------------------------------------------------------------------------
---  2. Password uniqueness
---  "a password that is unique" -> one password may only belong to one account.
---  We never store the password. We store a bcrypt fingerprint made with a
---  per-database salt that lives in app_secrets (readable only by the server).
---  NOTE: because the fingerprint salt is shared by every row, someone with a
---  full database dump could brute-force it offline. That is acceptable for a
---  student project; for production use per-user salts + a breach check.
+--  2. Password rules (no global uniqueness)
+--  Passwords must be strong (checked in the app), but two accounts may use
+--  the same password — there is no reason to block that. Any older unique-
+--  password machinery from earlier versions is removed here on re-run.
 -- --------------------------------------------------------------------------
-create table if not exists public.app_secrets (
-  id            int primary key default 1,
-  password_salt text not null
-);
-
-insert into public.app_secrets (id, password_salt)
-values (1, crypt(gen_random_bytes(16)::text, gen_salt('bf', 10)))
-on conflict (id) do nothing;
-
--- deterministic bcrypt fingerprint of a plaintext password
-create or replace function public.password_fingerprint(p_password text)
-returns text
-language sql
-stable
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-  select crypt(coalesce(p_password, ''), (select password_salt from public.app_secrets where id = 1));
-$$;
-
--- registry of every password already in use
-create table if not exists public.password_registry (
-  fingerprint  text primary key,
-  user_id      uuid not null references auth.users(id) on delete cascade,
-  created_at   timestamptz not null default now()
-);
-
--- called by the app before sign-up: is this password already taken?
-create or replace function public.password_is_taken(p_password text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-  select exists (
-    select 1 from public.password_registry
-    where fingerprint = public.password_fingerprint(p_password)
-  );
-$$;
-
--- called by the app just before sign-up. Returns both answers in one round trip:
---   taken       -> is this password already used by an account?
---   fingerprint -> the value the client passes to signUp() so the trigger above
---                  can re-check it server side
-create or replace function public.password_claim(p_password text)
-returns jsonb
-language plpgsql
-stable
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-declare
-  v_fp text;
-begin
-  v_fp := public.password_fingerprint(p_password);
-  return jsonb_build_object(
-    'taken', exists (
-      select 1 from public.password_registry r where r.fingerprint = v_fp
-    ),
-    'fingerprint', v_fp
-  );
-end;
-$$;
-
-revoke all on function public.password_fingerprint(text) from public, anon, authenticated;
-revoke all on function public.password_is_taken(text) from public, anon, authenticated;
-revoke all on function public.password_claim(text) from public;
-grant execute on function public.password_claim(text) to anon, authenticated;
-
--- enforced server side: if a client skips the pre-check and posts a
--- fingerprint that is already registered, the sign-up is rejected.
-create or replace function public.enforce_unique_password()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-declare
-  v_fp text;
-begin
-  v_fp := coalesce(new.raw_user_meta_data ->> 'password_fingerprint', '');
-  if v_fp <> '' and exists (
-    select 1 from public.password_registry r where r.fingerprint = v_fp
-  ) then
-    raise exception 'PASSWORD_ALREADY_IN_USE'
-      using hint = 'That password is already used by another account. Please pick a different one.';
-  end if;
-  return new;
-end;
-$$;
-
 drop trigger if exists trg_enforce_unique_password on auth.users;
-create trigger trg_enforce_unique_password
-  before insert on auth.users
-  for each row execute function public.enforce_unique_password();
-
--- record the fingerprint once the account exists
-create or replace function public.register_password_fingerprint()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-declare
-  v_fp text;
-begin
-  v_fp := coalesce(new.raw_user_meta_data ->> 'password_fingerprint', '');
-  if v_fp <> '' then
-    insert into public.password_registry (fingerprint, user_id)
-    values (v_fp, new.id)
-    on conflict (fingerprint) do update set user_id = excluded.user_id;
-  end if;
-  return new;
-end;
-$$;
-
 drop trigger if exists trg_register_password_fingerprint on auth.users;
-create trigger trg_register_password_fingerprint
-  after insert on auth.users
-  for each row execute function public.register_password_fingerprint();
+drop function if exists public.password_claim(text);
+drop function if exists public.password_is_taken(text);
+drop function if exists public.password_fingerprint(text);
+drop function if exists public.enforce_unique_password();
+drop function if exists public.register_password_fingerprint();
+drop table if exists public.password_registry;
+drop table if exists public.app_secrets;
 
 -- --------------------------------------------------------------------------
 --  3. Tables
@@ -661,15 +546,6 @@ alter table public.items               enable row level security;
 alter table public.pantry             enable row level security;
 alter table public.events             enable row level security;
 alter table public.activity           enable row level security;
-
--- Internal-only tables. The client never queries these directly: it calls the
--- security-definer functions above, which run as the table owner. Turn RLS on
--- with no policies (deny-all) and take away the API roles' table privileges, so
--- the salted password material can never be read through PostgREST.
-alter table public.app_secrets       enable row level security;
-alter table public.password_registry enable row level security;
-revoke all on public.app_secrets       from anon, authenticated;
-revoke all on public.password_registry from anon, authenticated;
 
 -- profiles: you can read and update your own
 drop policy if exists p_profiles_read  on public.profiles;
