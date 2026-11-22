@@ -385,10 +385,15 @@
             <svg><use href="#i-bell"/></svg>
             <span class="dot"></span>
           </button>
-          <div class="notif-menu" id="notif-menu" role="menu" aria-label="Low-stock alerts" hidden>
+          <div class="notif-menu" id="notif-menu" role="menu" aria-label="Notifications" hidden>
             <div class="notif-menu-head">
-              <span class="notif-menu-title"><svg><use href="#i-bell"/></svg> Low-stock</span>
+              <span class="notif-menu-title"><svg><use href="#i-bell"/></svg> Notification</span>
               <button class="notif-mark-read" id="notif-mark-read" data-notif="read" type="button">Mark all as read</button>
+            </div>
+            <div class="notif-filters" id="notif-filters">
+              <button class="notif-filter is-active" data-notif-filter="all" type="button">All</button>
+              <button class="notif-filter" data-notif-filter="low_stock" type="button">Low stock</button>
+              <button class="notif-filter" data-notif-filter="invite" type="button">Invite</button>
             </div>
             <div class="notif-menu-body" id="notif-body"></div>
             <div class="notif-menu-foot">
@@ -538,6 +543,26 @@
   </div>
 </div>
 
+<!-- ============================================ household invite decision -->
+<div class="modal" id="invite-modal" role="dialog" aria-modal="true" aria-label="Household invitation">
+  <div class="modal-box" id="invite-panel">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">You've been invited</span>
+        <h2>Join a household?</h2>
+      </div>
+      <button class="drawer-close" data-invite="close" aria-label="Close">
+        <svg><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="invite-body"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost is-danger" data-invite="reject" id="invite-reject-btn">Reject</button>
+      <button class="btn-primary-sm" data-invite="accept" id="invite-accept-btn">Accept invitation</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================================================== plan / schedule modal -->
 <!-- One dialog, two modes, both JS-rendered:
      "list"  -> Create a list (grocery, tasks, or an event list)
@@ -566,6 +591,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=28"></script>
+<script src="assets/js/app.js?v=29"></script>
 </body>
 </html>

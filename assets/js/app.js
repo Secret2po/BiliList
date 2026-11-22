@@ -94,7 +94,12 @@
     /* the create-list / schedule-event dialog (one modal, two modes) */
     plan: { open: false, mode: 'list', kind: 'event', eventId: null },
     /* low-stock warnings derived from the pantry */
-    alerts: []
+    alerts: [],
+    /* cloud notifications + invites */
+    notifications: [],
+    invites: [],
+    notifFilter: 'all',   /* all | low_stock | invite */
+    inviteToken: ''       /* token from the emailed accept/reject link */
   };
 
   /* ------------------------------------------------------- account boot-up */
@@ -845,13 +850,18 @@
         S.client.from('lists').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: true }),
         S.client.from('pantry').select('*').eq('workspace_id', workspace.id).order('name', { ascending: true }),
         S.client.from('workspace_members').select('user_id, role, online, joined_at').eq('workspace_id', workspace.id),
-        S.client.from('events').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true })
+        S.client.from('events').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }),
+        /* the two new tables may not exist until schema.sql is re-run */
+        S.client.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        S.client.from('workspace_invites').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: false })
       ]).then(function (res) {
         var categories = cloudData(res[0], 'categories');
         var lists = cloudData(res[1], 'lists');
         var pantry = cloudData(res[2], 'pantry');
         var members = cloudData(res[3], 'members');
         var events = cloudData(res[4], 'events');
+        var notifications = cloudData(res[5], 'notifications');
+        var invites = cloudData(res[6], 'workspace_invites');
 
         /* An account should always have somewhere to put an item. */
         var listsPromise = lists.length
@@ -886,6 +896,8 @@
                 items: items,
                 members: members,
                 events: events,
+                notifications: notifications,
+                invites: invites,
                 profiles: cloudData(pr, 'profiles')
               };
             });
@@ -992,6 +1004,14 @@
     /* the calendar is cloud-authoritative in workspace mode; demo browsers
        keep their seeded examples */
     state.events = (snapshot.events || []).map(mapCloudEvent);
+    state.notifications = snapshot.notifications || [];
+    state.invites = snapshot.invites || [];
+    /* pending rows in the drawer come from the cloud invites table */
+    state.pending = state.invites.filter(function (i) {
+      return (i.status || 'pending') === 'pending';
+    }).map(function (i) {
+      return { email: i.email, role: i.role, token: i.token, id: i.id, created_at: i.created_at };
+    });
 
     ensureStarterState();
     var ui = readUiState();
@@ -1368,7 +1388,7 @@
     try {
       cloud.channelSeq += 1;
       var channel = S.client.channel('bililist-ws-' + cloud.workspaceId + '-' + cloud.channelSeq);
-      ['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members'].forEach(function (table) {
+      ['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members', 'workspace_invites', 'notifications'].forEach(function (table) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table: table }, onRealtimeEvent);
       });
 
@@ -3418,17 +3438,165 @@
   function invite() {
     var emailEl = $('#invite-email');
     var roleEl = $('#invite-role');
-    var email = (emailEl.value || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      toast('Enter a valid email address');
+    var email = (emailEl.value || '').trim().toLowerCase();
+    var problem = emailProblem(email);
+    if (problem) {
+      toast(problem);
       if (emailEl) { emailEl.classList.add('invalid'); emailEl.focus(); }
       return;
     }
     emailEl.classList.remove('invalid');
-    state.pending.push({ email: email, role: roleEl.value });
+    var role = roleEl ? String(roleEl.value || 'editor').toLowerCase() : 'editor';
+    var ws = activeWorkspace();
+    var me = you();
+
+    if (state.pending.some(function (p) { return p.email.toLowerCase() === email; })) {
+      toast('An invite to ' + email + ' is already pending');
+      return;
+    }
+
+    /* in cloud mode, write the invite and email a branded button */
+    if (cloudMode() && S.client) {
+      S.client.from('workspace_invites').insert({
+        workspace_id: cloud.workspaceId,
+        email: email,
+        role: role,
+        invited_by: state.user ? state.user.id : null
+      }).select('*').single().then(function (r) {
+        if (r.error) throw r.error;
+        var token = r.data.token;
+        var url = APP_URL + '?invite=' + encodeURIComponent(token) + '#/dashboard';
+        state.pending.push({ email: email, role: role, token: token, id: r.data.id, created_at: r.data.created_at });
+        renderDrawer();
+        toast('Invite created — sending email…');
+        return sendInviteEmail(email, role, ws.name, me.name, url);
+      }).then(function (r) {
+        if (r && r.sent) toast('Invite emailed to ' + email);
+        else toast('Invite created — email delivery is not configured yet');
+      }).catch(function (err) {
+        cloudError('Could not send that invite', err);
+      });
+      return;
+    }
+
+    /* demo mode: keep it local */
+    state.pending.push({ email: email, role: role, sent: 'just now' });
     save();
     renderDrawer();
     toast('Invite sent to ' + email);
+  }
+
+  /* An emailed invite opens the app with ?invite=<token>. Show a clear
+     Accept / Reject screen; the server RPC enforces the email match. */
+  function showInviteScreen(token) {
+    if (!token) return;
+    state.inviteToken = token;
+    var modal = $('#invite-modal');
+    var body = $('#invite-body');
+    if (!modal || !body) return;
+    body.innerHTML =
+      '<div class="invite-hero">' + icon('users') +
+        '<p>You were invited to join a BiliLIST household. Accepting adds you as a member with the role below — rejecting changes nothing.</p>' +
+      '</div>' +
+      '<p class="invite-status" id="invite-status"></p>';
+
+    /* find the invite details in the snapshot if they are visible */
+    if (S.client) {
+      S.client.from('workspace_invites').select('role,email,status,workspace_id,workspaces(name),profiles:invited_by(full_name)')
+        .eq('token', token).maybeSingle().then(function (r) {
+          if (r && r.data && body) {
+            var d = r.data;
+            var ws = d.workspaces || {};
+            body.innerHTML =
+              '<div class="invite-hero">' + icon('users') +
+                '<p><b>' + esc((d.profiles && d.profiles.full_name) || 'A household member') + '</b> invited <b>' + esc(d.email) + '</b> to join <b>' + esc(ws.name || 'a BiliLIST household') + '</b> as <b>' + esc(d.role) + '</b>.</p>' +
+              '</div>' +
+              '<p class="invite-status" id="invite-status"></p>';
+          }
+          modal.classList.add('show');
+        });
+    } else {
+      modal.classList.add('show');
+    }
+  }
+
+  function setInviteStatus(msg, kind) {
+    var el = $('#invite-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'invite-status ' + (kind || '');
+  }
+
+  function respondToInvite(token, accept, fromScreen) {
+    var statusEl = $('#invite-status');
+    if (statusEl) { statusEl.textContent = accept ? 'Joining household…' : 'Declining invitation…'; statusEl.className = 'invite-status'; }
+    if (!S.client) {
+      showInviteScreen(token);
+      toast('Connect to Supabase to answer the invitation');
+      return;
+    }
+    S.client.rpc('respond_to_invite', { p_token: token, p_accept: !!accept })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        var data = (r && r.data) || {};
+        setInviteStatus(accept ? 'You joined the household! Opening your lists…' : 'Invitation rejected.', 'ok');
+        /* mark the matching notification read */
+        state.notifications.forEach(function (n) {
+          if (n.kind === 'invite' && n.data && n.data.inviteId === (data.inviteId || n.data.inviteId)) n.is_read = true;
+        });
+        setTimeout(function () {
+          closeInviteScreen();
+          if (state.signedIn) {
+            runCloudRefresh();
+          } else {
+            showLogin();
+          }
+        }, 900);
+      }).catch(function (e) {
+        var m = (e && e.message) || 'Could not answer the invitation.';
+        setInviteStatus(m, 'err');
+        toast(m);
+      });
+  }
+
+  function closeInviteScreen() {
+    var modal = $('#invite-modal');
+    if (modal) modal.classList.remove('show');
+    state.inviteToken = '';
+    /* remove the token from the URL so a refresh does not re-open the screen */
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.delete('invite');
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch (e) { /* ignore */ }
+  }
+
+  function bindInviteModal() {
+    var modal = $('#invite-modal');
+    if (!modal) return;
+    modal.addEventListener('click', function (e) {
+      var close = e.target.closest('[data-invite="close"]');
+      var accept = e.target.closest('[data-invite="accept"]');
+      var reject = e.target.closest('[data-invite="reject"]');
+      if (e.target.id === 'invite-modal' || close) { closeInviteScreen(); return; }
+      if (accept) { respondToInvite(state.inviteToken, true, true); return; }
+      if (reject) { respondToInvite(state.inviteToken, false, true); return; }
+    });
+  }
+
+  /* Calls the invite-member Edge Function (Brevo) so the recipient gets a
+     real email with one button that opens the accept/reject screen. */
+  function sendInviteEmail(email, role, workspaceName, inviterName, inviteUrl) {
+    if (!S.client || typeof S.client.functions.invoke !== 'function') return Promise.resolve(null);
+    return S.client.functions.invoke('invite-member', {
+      body: { email: email, role: role, workspaceName: workspaceName, inviterName: inviterName, inviteUrl: inviteUrl }
+    }).then(function (r) {
+      if (r && r.error) throw r.error;
+      return r && r.data;
+    }).catch(function (e) {
+      console.warn('Invite email failed', e);
+      return null;
+    });
   }
 
   function newPantryItem() {
@@ -3973,7 +4141,10 @@
   function unreadAlertCount() {
     var seen = readStoredMap(ALERT_SEEN_KEY);
     var count = 0;
-    state.alerts.forEach(function (a) { if (!seen[a.id]) count++; });
+    state.alerts.forEach(function (a) { if (!seen['stock-' + a.id]) count++; });
+    state.notifications.forEach(function (n) {
+      if (n.kind === 'invite' && !n.is_read) count++;
+    });
     return count;
   }
 
@@ -3984,8 +4155,8 @@
     dot.classList.toggle('is-on', unread > 0);
     var bell = $('#btn-bell');
     if (bell) bell.title = unread
-      ? unread + ' low-stock alert' + (unread === 1 ? '' : 's') + ' — click to view'
-      : 'All stocked up — no alerts';
+      ? unread + ' notification' + (unread === 1 ? '' : 's') + ' — click to view'
+      : 'Nothing new — all caught up';
   }
 
   function openNotifDropdown() {
@@ -4027,9 +4198,52 @@
 
   function markAlertSeen(id) {
     var map = readStoredMap(ALERT_SEEN_KEY);
-    map[id] = true;
+    map['stock-' + id] = true;
     writeStoredMap(ALERT_SEEN_KEY, map);
     updateBellBadge();
+  }
+
+  function markNotificationRead(id) {
+    state.notifications.forEach(function (n) { if (n.id === id) n.is_read = true; });
+    if (cloudMode() && S.client && id) {
+      S.client.from('notifications').update({ is_read: true }).eq('id', id).then(function () {});
+    }
+    updateBellBadge();
+    renderNotifPanel();
+  }
+
+  /* One unified feed: low-stock rows from the pantry plus cloud invite rows.
+     state.notifFilter switches between all / low_stock / invite. */
+  function notificationItems() {
+    var items = [];
+    state.alerts.forEach(function (a) {
+      items.push({
+        key: 'stock-' + a.id,
+        kind: 'low_stock',
+        id: a.id,
+        title: a.name + (a.reason === 'Out' || a.reason === 'Expired'
+          ? ' · ' + a.reason : ' · ' + a.reason + ' stock'),
+        sub: a.expiry || 'Running low',
+        chip: a.reason === 'Out' || a.reason === 'Expired' ? 'chip-red' : 'chip-gold',
+        urgent: a.reason === 'Out' || a.reason === 'Expired',
+        pantry: a
+      });
+    });
+    state.notifications.forEach(function (n) {
+      if (n.kind !== 'invite') return;
+      items.push({
+        key: 'invite-' + n.id,
+        kind: 'invite',
+        id: n.id,
+        title: n.title || 'Household invitation',
+        sub: n.body || 'You were invited to a household',
+        chip: 'chip-green',
+        urgent: false,
+        data: n.data || {},
+        isRead: !!n.is_read
+      });
+    });
+    return items;
   }
 
   function renderNotifPanel() {
@@ -4045,8 +4259,19 @@
         : 'Turn on browser alerts';
       permBtn.disabled = supported && Notification.permission === 'denied';
     }
+
+    var filter = state.notifFilter || 'all';
+    $$('[data-notif-filter]').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.dataset.notifFilter === filter);
+    });
+
     var seenMap = readStoredMap(ALERT_SEEN_KEY);
-    var anyUnread = state.alerts.some(function (a) { return !seenMap[a.id]; });
+    var items = notificationItems().filter(function (i) {
+      return filter === 'all' || i.kind === filter;
+    });
+    var anyUnread = items.some(function (i) {
+      return i.kind === 'invite' ? !i.isRead : !seenMap[i.key];
+    });
     var readAll = $('#notif-mark-read');
     if (readAll) readAll.disabled = !anyUnread;
 
@@ -4055,30 +4280,62 @@
       html += '<p class="notif-ok">' + icon('check') + ' Browser alerts are on — warnings pop up even when this tab is closed in the background.</p>';
     }
 
-    if (!state.alerts.length) {
+    if (!items.length) {
       html += '<div class="notif-empty">' + icon('bell') +
-        '<p>All stocked up — nothing in the household inventory is running low.</p>' +
-        '<p class="notif-sub">Alerts appear here automatically when an inventory item reads low, empty, or expiring.</p></div>';
+        '<p>' + (filter === 'invite' ? 'No invitations yet.' : filter === 'low_stock' ? 'All stocked up — nothing is running low.' : 'Nothing new right now.') + '</p>' +
+        '<p class="notif-sub">Low stock and household invitations will appear here.</p></div>';
     } else {
-      html += state.alerts.map(function (a) {
-        var isRead = !!seenMap[a.id];
-        var level = a.reason === 'Out' || a.reason === 'Expired'
-          ? '<span class="chip chip-red">' + a.reason + '</span>'
-          : '<span class="chip chip-gold">' + a.reason + ' stock</span>';
-        return '<div class="notif-item notif-goto' + (a.reason === 'Out' || a.reason === 'Expired' ? ' is-urgent' : '') + (isRead ? ' is-read' : '') + '" role="button" tabindex="0" data-notif="goto" data-item="' + esc(a.id) + '" title="Show in Inventory">' +
-          '<div class="ni-main">' +
-            '<div class="ni-title">' + esc(a.name) + ' ' + level + '</div>' +
-            '<div class="ni-sub">' + icon('clock') + esc(a.expiry || 'Running low') + '</div>' +
-          '</div>' +
-          '<button class="btn-primary-sm notif-add" data-pantry="' + esc(a.name) + '" data-pantry-cat="' + esc(a.cat || '') + '" data-pantry-n="' + (a.qty ? a.qty.n : 1) + '" data-pantry-u="' + esc(a.qty ? a.qty.u : 'pcs') + '">' + icon('plus') + ' Add</button>' +
-        '</div>';
+      html += items.map(function (i) {
+        var isRead = i.kind === 'invite' ? i.isRead : !!seenMap[i.key];
+        var row;
+        if (i.kind === 'invite') {
+          row = '<div class="notif-item notif-goto' + (isRead ? ' is-read' : '') + '" role="button" tabindex="0" data-notif="open-invite" data-item="' + esc(i.data.inviteId || i.id) + '" data-token="' + esc(i.data.token || '') + '" title="Open invitation">' +
+            '<div class="ni-main">' +
+              '<div class="ni-title">' + esc(i.title) + ' <span class="chip chip-green">Invite</span></div>' +
+              '<div class="ni-sub">' + icon('mail') + esc(i.sub) + '</div>' +
+            '</div>' +
+            '<button class="btn-primary-sm notif-add" data-notif="accept-invite" data-token="' + esc(i.data.token || '') + '">Accept</button>' +
+          '</div>';
+        } else {
+          var a = i.pantry;
+          row = '<div class="notif-item notif-goto' + (i.urgent ? ' is-urgent' : '') + (isRead ? ' is-read' : '') + '" role="button" tabindex="0" data-notif="goto" data-item="' + esc(a.id) + '" title="Show in Inventory">' +
+            '<div class="ni-main">' +
+              '<div class="ni-title">' + esc(i.title) + ' <span class="chip ' + i.chip + '">' + esc(a.reason) + '</span></div>' +
+              '<div class="ni-sub">' + icon('clock') + esc(i.sub) + '</div>' +
+            '</div>' +
+            '<button class="btn-primary-sm notif-add" data-pantry="' + esc(a.name) + '" data-pantry-cat="' + esc(a.cat || '') + '" data-pantry-n="' + (a.qty ? a.qty.n : 1) + '" data-pantry-u="' + esc(a.qty ? a.qty.u : 'pcs') + '">' + icon('plus') + ' Add</button>' +
+          '</div>';
+        }
+        return row;
       }).join('');
-      html += '<p class="notif-sub">Tap an alert to jump to the item in Inventory. Alerts clear themselves when the household restocks.</p>';
+      html += '<p class="notif-sub">Tap a notification to open it. Low stock clears itself when the household restocks.</p>';
     }
     body.innerHTML = html;
   }
 
   function onNotifClick(e) {
+    var filterBtn = e.target.closest('[data-notif-filter]');
+    if (filterBtn) {
+      state.notifFilter = filterBtn.dataset.notifFilter;
+      renderNotifPanel();
+      return;
+    }
+    var acceptBtn = e.target.closest('[data-notif="accept-invite"]');
+    if (acceptBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      respondToInvite(acceptBtn.dataset.token, true);
+      return;
+    }
+    var openInvite = e.target.closest('[data-notif="open-invite"]');
+    if (openInvite) {
+      e.preventDefault();
+      e.stopPropagation();
+      markNotificationRead(openInvite.dataset.item);
+      closeNotifDropdown();
+      showInviteScreen(openInvite.dataset.token);
+      return;
+    }
     /* the Add button does the shopping-list part through the shared app
        handler; the alert itself is marked read but the menu stays open */
     var add = e.target.closest('[data-pantry]');
@@ -4090,11 +4347,15 @@
     var read = e.target.closest('[data-notif="read"]');
     if (read) {
       var map = {};
-      state.alerts.forEach(function (a) { map[a.id] = true; });
+      state.alerts.forEach(function (a) { map['stock-' + a.id] = true; });
       writeStoredMap(ALERT_SEEN_KEY, map);
+      state.notifications.forEach(function (n) { n.is_read = true; });
+      if (cloudMode() && S.client) {
+        S.client.from('notifications').update({ is_read: true }).eq('user_id', state.user.id).then(function () {});
+      }
       updateBellBadge();
       renderNotifPanel();
-      toast('All alerts marked as read');
+      toast('All notifications marked as read');
       return;
     }
     var goto = e.target.closest('[data-notif="goto"]');
@@ -5144,6 +5405,9 @@
     setOAuthPending(false);
     applyUser(user);
 
+    /* if the person followed an emailed invite link, ask them now */
+    if (state.inviteToken) setTimeout(function () { showInviteScreen(state.inviteToken); }, 400);
+
     var hash = (window.location.hash || '').replace('#/', '');
     state.route = opts.route || (['dashboard', 'lists', 'spending'].indexOf(hash) !== -1 ? hash : 'dashboard');
     try { window.history.replaceState(null, '', '#/' + state.route); } catch (e) { /* ignore */ }
@@ -6115,7 +6379,23 @@
       toast('Switched to ' + (state.workspaces.filter(function (w) { return w.active; })[0] || {}).name);
       return;
     }
-    if (el.dataset.resend) { toast('Invite re-sent to ' + el.dataset.resend); return; }
+    if (el.dataset.resend) {
+      var resendEmail = el.dataset.resend;
+      var invite = state.pending.filter(function (i) { return i.email.toLowerCase() === resendEmail.toLowerCase(); })[0];
+      var token = invite && invite.token;
+      if (cloudMode() && token) {
+        var url = APP_URL + '?invite=' + encodeURIComponent(token) + '#/dashboard';
+        var wsName = activeWorkspace().name;
+        var meName = you().name;
+        toast('Re-sending invite…');
+        sendInviteEmail(resendEmail, invite.role || 'editor', wsName, meName, url).then(function (r) {
+          toast(r && r.sent ? 'Invite re-sent to ' + resendEmail : 'Email delivery is not configured yet');
+        });
+      } else {
+        toast('Invite re-sent to ' + resendEmail);
+      }
+      return;
+    }
 
     switch (el.dataset.act) {
       case 'close-drawer': closeDrawer(); break;
@@ -6139,9 +6419,20 @@
   function onDrawerChange(e) {
     if (e.target.dataset && e.target.dataset.member) {
       var id = e.target.dataset.member;
+      var newRole = String(e.target.value).toLowerCase();
       state.members.forEach(function (m) { if (m.id === id) m.role = e.target.value; });
       save();
       toast('Role updated to ' + e.target.value);
+
+      if (cloudMode() && S.client && cloud.workspaceId && id !== 'me') {
+        S.client.from('workspace_members')
+          .update({ role: newRole })
+          .eq('workspace_id', cloud.workspaceId)
+          .eq('user_id', id)
+          .then(function (r) {
+            if (r && r.error) cloudError('Could not save that role change', r.error);
+          });
+      }
     }
   }
 
@@ -6150,6 +6441,12 @@
     load();
     state.guideDismissed = readGuideDismissed();
     initBirthdaySelects();
+    bindInviteModal();
+    /* an emailed invite link carries ?invite=<token> */
+    try {
+      var inviteParam = new URL(window.location.href).searchParams.get('invite');
+      if (inviteParam) state.inviteToken = inviteParam;
+    } catch (e) { /* ignore */ }
     bindTheme();
     bindSidenav();
     applyTheme(currentTheme(), { persist: false });

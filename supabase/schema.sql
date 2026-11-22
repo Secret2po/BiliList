@@ -68,6 +68,62 @@ $$;
 revoke all on function public.email_in_use(text) from public;
 grant execute on function public.email_in_use(text) to anon, authenticated;
 
+-- Accept or reject an invite by its emailed token. Runs as the table owner so
+-- a person who is not yet a workspace member can join through the link.
+-- Rejecting does not add them to the household; accepting is idempotent.
+create or replace function public.respond_to_invite(p_token text, p_accept boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_invite public.workspace_invites;
+  v_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  select email into v_email from auth.users where id = auth.uid();
+
+  select * into v_invite from public.workspace_invites where token = p_token;
+  if not found then
+    raise exception 'Invitation not found';
+  end if;
+  if v_invite.status <> 'pending' then
+    raise exception 'This invitation was already answered';
+  end if;
+  if v_invite.created_at < now() - interval '7 days' then
+    update public.workspace_invites set status = 'expired', responded_at = now() where id = v_invite.id;
+    raise exception 'This invitation has expired';
+  end if;
+  if lower(coalesce(v_email, '')) <> lower(v_invite.email) then
+    raise exception 'This invitation was sent to a different email address';
+  end if;
+
+  update public.workspace_invites
+    set status = case when p_accept then 'accepted' else 'rejected' end,
+        responded_at = now()
+    where id = v_invite.id;
+
+  if p_accept then
+    insert into public.workspace_members (workspace_id, user_id, role, online)
+    values (v_invite.workspace_id, auth.uid(), v_invite.role, true)
+    on conflict (workspace_id, user_id) do update set role = excluded.role;
+
+    insert into public.activity (workspace_id, user_id, text)
+    values (v_invite.workspace_id, auth.uid(), 'joined the household');
+
+    return jsonb_build_object('ok', true, 'workspace_id', v_invite.workspace_id, 'role', v_invite.role);
+  end if;
+
+  return jsonb_build_object('ok', true, 'rejected', true);
+end;
+$$;
+
+revoke all on function public.respond_to_invite(text, boolean) from public;
+grant execute on function public.respond_to_invite(text, boolean) to authenticated;
+
 -- --------------------------------------------------------------------------
 --  3. Tables
 -- --------------------------------------------------------------------------
@@ -190,6 +246,38 @@ create table if not exists public.activity (
   text         text not null,
   created_at   timestamptz not null default now()
 );
+
+-- Household invitations. A token is emailed to the recipient; opening the
+-- link in the app lets them accept or reject. Only one live invite per email
+-- and workspace; status: pending | accepted | rejected | expired.
+create table if not exists public.workspace_invites (
+  id            uuid primary key default gen_random_uuid(),
+  workspace_id  uuid not null references public.workspaces(id) on delete cascade,
+  email         text not null,
+  role          public.member_role not null default 'editor',
+  token         text not null unique default encode(gen_random_bytes(24), 'hex'),
+  invited_by    uuid references auth.users(id) on delete set null,
+  status        text not null default 'pending',
+  created_at    timestamptz not null default now(),
+  responded_at  timestamptz
+);
+create unique index if not exists workspace_invites_live
+  on public.workspace_invites (workspace_id, lower(email))
+  where status = 'pending';
+
+-- In-app notifications: low-stock warnings and household invites, per user.
+create table if not exists public.notifications (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  workspace_id  uuid references public.workspaces(id) on delete cascade,
+  kind          text not null default 'low_stock',  -- low_stock | invite
+  title         text not null,
+  body          text not null default '',
+  data          jsonb not null default '{}'::jsonb, -- {itemId, inviteId, ...}
+  is_read       boolean not null default false,
+  created_at    timestamptz not null default now()
+);
+create index if not exists idx_notifications_user on public.notifications(user_id, created_at desc);
 
 create index if not exists idx_items_list      on public.items(list_id);
 create index if not exists idx_items_assigned  on public.items(assigned_to);
@@ -569,6 +657,8 @@ alter table public.items               enable row level security;
 alter table public.pantry             enable row level security;
 alter table public.events             enable row level security;
 alter table public.activity           enable row level security;
+alter table public.workspace_invites  enable row level security;
+alter table public.notifications      enable row level security;
 
 -- profiles: you can read and update your own
 drop policy if exists p_profiles_read  on public.profiles;
@@ -660,6 +750,26 @@ drop policy if exists p_activity_write on public.activity;
 create policy p_activity_write on public.activity
   for insert to authenticated with check (public.is_member(workspace_id));
 
+-- invites: members of a workspace can see / create / cancel its invites.
+-- A recipient can also read the invite addressed to their own email, which
+-- is how the accept/reject screen works before they join.
+drop policy if exists p_invites_read on public.workspace_invites;
+create policy p_invites_read on public.workspace_invites
+  for select to authenticated using (
+    public.is_member(workspace_id) or lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+drop policy if exists p_invites_write on public.workspace_invites;
+create policy p_invites_write on public.workspace_invites
+  for all to authenticated using (public.can_edit(workspace_id)) with check (public.can_edit(workspace_id));
+
+-- notifications: a person sees and manages only their own
+drop policy if exists p_notifications_read on public.notifications;
+create policy p_notifications_read on public.notifications
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists p_notifications_write on public.notifications;
+create policy p_notifications_write on public.notifications
+  for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
 -- --------------------------------------------------------------------------
 --  7. Realtime
 --  Postgres Changes only broadcasts tables that belong to the
@@ -674,7 +784,7 @@ begin
     select 1 from pg_publication
     where pubname = 'supabase_realtime' and not puballtables
   ) then
-    foreach t in array array['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members']
+    foreach t in array array['items', 'lists', 'pantry', 'categories', 'events', 'workspace_members', 'workspace_invites', 'notifications']
     loop
       if not exists (
         select 1 from pg_publication_tables

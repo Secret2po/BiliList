@@ -2512,3 +2512,27 @@ html.theme-switching *::after {
 }
 .bday-select:invalid, .bday-select[value=""] { color: var(--muted); }
 .bday-select:focus { border-color: var(--green-500); }
+
+/* ==========================================================================
+   Notification center: filters, invite rows, accept/reject screen
+   ========================================================================== */
+.notif-filters {
+  display: flex; gap: 6px; padding: 0 4px 10px;
+  border-bottom: 1px solid var(--line-2); margin-bottom: 8px;
+}
+.notif-filter {
+  flex: 1; height: 32px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  color: var(--muted); background: var(--cream-100); transition: .15s;
+}
+.notif-filter:hover { color: var(--ink); background: var(--cream-200); }
+.notif-filter.is-active { color: #fff; background: var(--green-600); }
+.notif-item[data-notif="open-invite"] { border-color: var(--green-200); background: var(--green-50); }
+.invite-hero {
+  display: flex; align-items: flex-start; gap: 14px; padding: 14px 0 4px;
+  font-size: 14px; line-height: 1.6; color: var(--ink-soft);
+}
+.invite-hero svg { width: 26px; height: 26px; flex: none; color: var(--green-600); }
+.invite-status { min-height: 20px; margin: 16px 0 0; font-size: 13px; color: var(--muted); }
+.invite-status.ok { color: var(--green-600); font-weight: 600; }
+.invite-status.err { color: var(--danger); font-weight: 600; }
+#invite-modal .modal-foot { justify-content: space-between; }
