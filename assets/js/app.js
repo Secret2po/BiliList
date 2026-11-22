@@ -13,6 +13,8 @@
   var GUIDE_KEY = 'bililist.guide.v1';
   var STARTER_KEY = 'bililist.starter.';
   var SIDENAV_KEY = 'bililist.sidenav.v1';
+  var PURCHASE_KEY = 'bililist.purchases.v1';
+  var BUDGET_KEY = 'bililist.budgets.v1';
 
   /* When a Supabase session is active, this is the source of truth. The
      localStorage prototype state is only used for demo / offline mode. */
@@ -44,6 +46,10 @@
     return '<svg class="ic' + (cls ? ' ' + cls : '') + '"><use href="#i-' + name + '"/></svg>';
   }
   function peso(n) { return '₱' + Number(n).toLocaleString('en-PH'); }
+  /* item prices always show two decimals, so ₱125.50 never renders as ₱125.5 */
+  function money(n) {
+    return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -99,7 +105,12 @@
     notifications: [],
     invites: [],
     notifFilter: 'all',   /* all | low_stock | invite */
-    inviteToken: ''       /* token from the emailed accept/reject link */
+    inviteToken: '',      /* token from the emailed accept/reject link */
+    /* spending: a ledger of priced check-offs + editable budget caps.
+       Kept locally so it survives both demo mode and cloud mode. */
+    purchases: [],
+    budgets: null,
+    pendingPurchase: null
   };
 
   /* ------------------------------------------------------- account boot-up */
@@ -597,6 +608,48 @@
     } catch (e) { /* ignore malformed state */ }
   }
 
+  /* ------------------------------------------------------- spending store */
+  function defaultBudgets() {
+    var out = {};
+    D.spending.rangeOrder.forEach(function (k) {
+      out[k] = D.spending.ranges[k].budget;
+    });
+    return out;
+  }
+
+  function loadSpending() {
+    try {
+      var raw = localStorage.getItem(PURCHASE_KEY);
+      var data = raw ? JSON.parse(raw) : null;
+      state.purchases = Array.isArray(data) ? data : [];
+    } catch (e) { state.purchases = []; }
+
+    try {
+      var braw = localStorage.getItem(BUDGET_KEY);
+      var saved = braw ? JSON.parse(braw) : null;
+      state.budgets = defaultBudgets();
+      if (saved && typeof saved === 'object') {
+        D.spending.rangeOrder.forEach(function (k) {
+          var n = Number(saved[k]);
+          if (isFinite(n) && n > 0) state.budgets[k] = n;
+        });
+      }
+    } catch (e) { state.budgets = defaultBudgets(); }
+  }
+
+  function persistPurchases() {
+    try { localStorage.setItem(PURCHASE_KEY, JSON.stringify(state.purchases)); } catch (e) { /* ignore */ }
+  }
+
+  function persistBudgets() {
+    try { localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budgets)); } catch (e) { /* ignore */ }
+  }
+
+  function budgetFor(key) {
+    if (!state.budgets) state.budgets = defaultBudgets();
+    return Number(state.budgets[key]) || D.spending.ranges[key].budget;
+  }
+
   /* Older saves stored the aisle as a label and the quantity as free text.
      Move them onto category ids and {n, u} quantity objects. */
   function migrateItems() {
@@ -625,6 +678,8 @@
     localStorage.removeItem(STORE_KEY);
     localStorage.removeItem(UI_KEY);
     localStorage.removeItem(GUIDE_KEY);
+    localStorage.removeItem(PURCHASE_KEY);
+    localStorage.removeItem(BUDGET_KEY);
     location.reload();
   }
 
@@ -1943,10 +1998,175 @@
     '</section>';
   }
 
+  /* ======================= SPENDING (live data) ========================== */
+  /* Purchases are captured when an item is checked off (see the price modal).
+     Everything below is derived from that ledger, so the mini card, the full
+     page and the budget caps always stay in sync. */
+
+  function startOfWeek(d) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setHours(0, 0, 0, 0);
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); /* Monday */
+    return x;
+  }
+
+  function spendingWindow(key) {
+    var now = new Date();
+    var y = now.getFullYear(), m = now.getMonth();
+    var start, end;
+    switch (key) {
+      case 'w1': start = startOfWeek(now); end = new Date(start); end.setDate(end.getDate() + 7); break;
+      case 'm1': start = new Date(y, m, 1); end = new Date(y, m + 1, 1); break;
+      case 'm3': start = new Date(y, m - 2, 1); end = new Date(y, m + 1, 1); break;
+      case 'm6': start = new Date(y, m - 5, 1); end = new Date(y, m + 1, 1); break;
+      default:   start = new Date(y, m - 11, 1); end = new Date(y, m + 1, 1); break;
+    }
+    return { start: start, end: end };
+  }
+
+  function purchasesIn(key) {
+    var w = spendingWindow(key);
+    var from = w.start.getTime(), to = w.end.getTime();
+    return state.purchases.filter(function (p) {
+      var t = new Date(p.date).getTime();
+      return isFinite(t) && t >= from && t < to;
+    });
+  }
+
+  function sumAmounts(list) {
+    return list.reduce(function (n, p) { return n + (Number(p.amount) || 0); }, 0);
+  }
+
+  function rangeTotals(key) {
+    var amount = sumAmounts(purchasesIn(key));
+    var budget = budgetFor(key);
+    var meta = D.spending.ranges[key];
+    return {
+      amount: amount,
+      budget: budget,
+      left: budget - amount,
+      pct: budget > 0 ? Math.min(100, Math.round((amount / budget) * 100)) : 0,
+      label: meta.label,
+      period: meta.period
+    };
+  }
+
+  function bucketIndex(p, key) {
+    var d = new Date(p.date);
+    var day = d.getDay();
+    var dow = (day + 6) % 7;                 /* 0 = Monday */
+    var dom = d.getDate();
+    var monthDiff = (d.getFullYear() - new Date().getFullYear()) * 12 + d.getMonth() - new Date().getMonth();
+    switch (key) {
+      case 'w1': return dow;
+      case 'm1': return Math.min(3, Math.floor((dom - 1) / 7));
+      case 'm3': return Math.min(2, 2 + monthDiff);
+      case 'm6': return Math.min(5, 5 + monthDiff);
+      default:   return Math.min(3, Math.floor(d.getMonth() / 3));
+    }
+  }
+
+  function bucketLabels(key) {
+    if (key === 'w1') return ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    if (key === 'm1') return ['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'];
+    if (key === 'y1') return ['Q1', 'Q2', 'Q3', 'Q4'];
+    var now = new Date(), out = [], count = key === 'm3' ? 3 : 6;
+    for (var i = count - 1; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      out.push(MONTHS[d.getMonth()].slice(0, 3));
+    }
+    return out;
+  }
+
+  function computeMini(key) {
+    var labels = bucketLabels(key);
+    var values = labels.map(function () { return 0; });
+    purchasesIn(key).forEach(function (p) {
+      var i = bucketIndex(p, key);
+      if (i >= 0 && i < values.length) values[i] += Number(p.amount) || 0;
+    });
+    var now = new Date();
+    var hot = key === 'w1' ? (now.getDay() + 6) % 7 : -1;
+    return { labels: labels, values: values, hot: hot };
+  }
+
+  function computeChart(key) {
+    var labels = bucketLabels(key);
+    if (key === 'w1') labels = D.spending.chart.labels.slice();
+    var produce = labels.map(function () { return 0; });
+    var dairy = labels.map(function () { return 0; });
+    var other = labels.map(function () { return 0; });
+    purchasesIn(key).forEach(function (p) {
+      var i = bucketIndex(p, key);
+      if (i < 0 || i >= labels.length) return;
+      var amt = Number(p.amount) || 0;
+      if (p.cat === 'produce') produce[i] += amt;
+      else if (p.cat === 'dairy') dairy[i] += amt;
+      else other[i] += amt;
+    });
+    return { labels: labels, produce: produce, dairy: dairy, other: other };
+  }
+
+  function catLabel(id) {
+    for (var i = 0; i < state.categories.length; i++) {
+      if (state.categories[i].id === id) return state.categories[i].name;
+    }
+    return id || 'Other';
+  }
+
+  function computeBreakdown(key) {
+    var groups = {};
+    purchasesIn(key).forEach(function (p) {
+      var name = catLabel(p.cat);
+      if (!groups[name]) groups[name] = 0;
+      groups[name] += Number(p.amount) || 0;
+    });
+    var total = 0;
+    Object.keys(groups).forEach(function (k) { total += groups[k]; });
+    return Object.keys(groups).map(function (k) {
+      return { name: k, amount: groups[k], pct: total ? Math.round((groups[k] / total) * 100) : 0 };
+    }).sort(function (a, b) { return b.amount - a.amount; });
+  }
+
+  function localDayKey(dateStr) {
+    var d = new Date(dateStr);
+    return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  }
+
+  function computeStats(key) {
+    var week = purchasesIn('w1');
+    var weekAmount = sumAmounts(week);
+    var trips = {};
+    week.forEach(function (p) {
+      var dk = localDayKey(p.date);
+      trips[dk] = (trips[dk] || 0) + (Number(p.amount) || 0);
+    });
+    var perTrip = Object.keys(trips).map(function (k) { return trips[k]; });
+    var avg = perTrip.length ? weekAmount / perTrip.length : 0;
+    var current = purchasesIn(key);
+    var t = rangeTotals(key);
+    var noun = function (n, s) { return n + ' ' + s + (n === 1 ? '' : 's'); };
+
+    return [
+      { label: 'This week', value: peso(weekAmount),
+        delta: week.length ? noun(week.length, 'item') + ' checked off' : 'No shopping logged yet',
+        dir: week.length ? 'down' : 'flat', icon: 'wallet' },
+      { label: 'Average trip', value: peso(Math.round(avg)),
+        delta: perTrip.length ? noun(perTrip.length, 'trip') + ' this week' : 'No trips yet',
+        dir: perTrip.length ? 'down' : 'flat', icon: 'cart' },
+      { label: 'Items bought', value: String(current.length),
+        delta: current.length ? 'Logged in ' + t.label.toLowerCase() : 'Nothing checked off yet',
+        dir: current.length ? 'down' : 'flat', icon: 'box' },
+      { label: 'Budget left', value: peso(t.left),
+        delta: t.left >= 0 ? t.pct + '% of cap used' : 'Over cap for ' + t.period,
+        dir: t.left >= 0 ? 'down' : 'up', icon: 'chart' }
+    ];
+  }
+
   function spendMiniCard() {
     var sp = D.spending;
-    var r = sp.ranges[state.spendingRange];
-    var mini = sp.mini[state.spendingRange];
+    var r = rangeTotals(state.spendingRange);
+    var mini = computeMini(state.spendingRange);
 
     var tabs = sp.rangeOrder.map(function (k) {
       return '<button class="spend-tab' + (state.spendingRange === k ? ' is-active' : '') + '" data-srange="' + k + '">' + sp.rangeLabels[k] + '</button>';
@@ -1960,8 +2180,8 @@
         '<div class="day">' + mini.labels[i] + '</div></div>';
     }).join('');
 
-    var left = r.budget - r.amount;
-    var pct = Math.min(100, Math.round((r.amount / r.budget) * 100));
+    var left = r.left;
+    var pct = r.pct;
 
     return '<section class="card spend-card spend-card--click" data-route="spending" role="button" tabindex="0" ' +
         'aria-label="Open the full spending insights module">' +
@@ -2012,8 +2232,10 @@
     var open = state.editingId === it.id;
     var hit = state.highlightId === it.id;
     return '<div class="item-row' + (it.done ? ' done' : '') + (open ? ' is-open' : '') + (hit ? ' is-found' : '') + '" data-id="' + it.id + '">' +
-      '<button class="tick' + (it.done ? ' on' : '') + '" data-act="toggle" aria-label="Toggle ' + esc(it.name) + '">' + icon('check') + '</button>' +
-      '<span class="item-name">' + esc(it.name) + '</span>' +
+      '<button class="tick' + (it.done ? ' on' : '') + '" data-act="toggle" aria-label="Toggle ' + esc(it.name) + '"' +
+        (it.price ? ' title="Logged at ' + esc(money(it.price)) + '"' : '') + '>' + icon('check') + '</button>' +
+      '<span class="item-name"><span class="item-name-txt">' + esc(it.name) + '</span>' +
+        (it.price ? '<span class="item-price" title="Price paid">' + esc(money(it.price)) + '</span>' : '') + '</span>' +
       '<span class="item-qty">' + esc(qtyText(it.qty)) + '</span>' +
       '<span class="item-owner"><span class="avatar avatar-sm" title="' + esc(m.name) + '">' + esc(m.initials) + '</span></span>' +
       '<button class="item-edit" data-act="edit-item" aria-label="Edit ' + esc(it.name) + '" title="Edit item">' + icon('pencil') + '</button>' +
@@ -2791,7 +3013,7 @@
         '<li><span class="dg-num">1</span><div><b>Add what you need</b>' +
           '<span>Search for any item, or press “Add item” on your list.</span></div></li>' +
         '<li><span class="dg-num">2</span><div><b>Tick items off as you shop</b>' +
-          '<span>Checked items move to your pantry and count towards spending.</span></div></li>' +
+          '<span>Enter the price you paid, then check it off — it moves to your pantry and counts towards spending.</span></div></li>' +
         '<li><span class="dg-num">3</span><div><b>Check your spending</b>' +
           '<span>Open Spending insights to see where the budget went.</span></div></li>' +
       '</ol>' +
@@ -2926,10 +3148,12 @@
   /* ============================= SPENDING PAGE ============================ */
   function renderSpending() {
     var sp = D.spending;
-    var r = sp.ranges[state.spendingRange];
-    var ch = sp.chart;
+    var key = state.spendingRange;
+    var r = rangeTotals(key);
+    var ch = computeChart(key);
     var totals = ch.labels.map(function (_, i) { return ch.produce[i] + ch.dairy[i] + ch.other[i]; });
     var max = Math.max.apply(null, totals) || 1;
+    var capNames = { w1: 'weekly', m1: 'monthly', m3: '3-month', m6: '6-month', y1: '12-month' };
 
     var cols = ch.labels.map(function (label, i) {
       var p = Math.round((ch.produce[i] / max) * 100);
@@ -2946,21 +3170,45 @@
       '</div>';
     }).join('');
 
-    var stats = sp.stats.map(function (s) {
-      return '<div class="stat">' +
-        '<div class="s-label">' + icon(s.icon) + esc(s.label) + '</div>' +
+    var stats = computeStats(key).map(function (s) {
+      return '<div class="stat' + (s.label === 'Budget left' ? ' stat--budget" data-act="edit-budget" role="button" tabindex="0" title="Edit budget caps' : '') + '">' +
+        '<div class="s-label">' + icon(s.icon) + esc(s.label) +
+          (s.label === 'Budget left' ? '<span class="stat-edit">' + icon('pencil') + '</span>' : '') + '</div>' +
         '<div class="s-value">' + esc(s.value) + '</div>' +
         '<div class="s-delta ' + s.dir + '">' + esc(s.delta) + '</div>' +
       '</div>';
     }).join('');
 
-    var breakdown = sp.breakdown.map(function (b) {
-      return '<div class="breakdown-row">' +
-        '<div class="bd-top"><b>' + esc(b.name) + '</b><span>' + peso(b.amount) + '</span></div>' +
-        '<div class="bd-bar"><i style="width:' + b.pct + '%"></i></div>' +
-        '<div class="bd-pct">' + b.pct + '% of household spending</div>' +
-      '</div>';
-    }).join('');
+    var rows = computeBreakdown(key);
+    var breakdown = rows.length
+      ? rows.map(function (b) {
+          return '<div class="breakdown-row">' +
+            '<div class="bd-top"><b>' + esc(b.name) + '</b><span>' + money(b.amount) + '</span></div>' +
+            '<div class="bd-bar"><i style="width:' + b.pct + '%"></i></div>' +
+            '<div class="bd-pct">' + b.pct + '% of household spending</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="empty-note">No purchases logged yet. Check off an item and enter its price to see it here.</div>';
+
+    var recent = purchasesIn(key).slice().sort(function (a, b) {
+      return new Date(b.date) - new Date(a.date);
+    }).slice(0, 8);
+    var recentHtml = recent.length
+      ? '<section class="card recent-buys">' +
+          '<div class="card-head"><span class="card-title">Logged purchases</span>' +
+            '<span class="card-more">' + recent.length + ' in ' + esc(r.label.toLowerCase()) + '</span></div>' +
+          recent.map(function (p) {
+            var d = new Date(p.date);
+            return '<div class="buy-row">' +
+              '<span class="buy-date">' + DOW_SHORT[d.getDay()] + ' ' + d.getDate() + '</span>' +
+              '<span class="buy-name">' + esc(p.name) +
+                (p.qty ? '<small>' + esc(p.qty) + '</small>' : '') + '</span>' +
+              '<span class="buy-cat">' + esc(catLabel(p.cat)) + '</span>' +
+              '<span class="buy-amt">' + money(p.amount) + '</span>' +
+            '</div>';
+          }).join('') +
+        '</section>'
+      : '';
 
     return '<div class="page">' +
       '<div class="page-head">' +
@@ -2969,6 +3217,7 @@
           '<p>' + esc(r.label) + ' · household of 4 · shared across every list</p>' +
         '</div>' +
         '<div class="page-head-actions">' +
+          '<button class="btn-new" data-act="edit-budget">' + icon('pencil') + ' Edit budget</button>' +
           '<button class="btn-new" data-act="export">' + icon('arrow-up-right') + ' Export</button>' +
         '</div>' +
       '</div>' +
@@ -2980,12 +3229,13 @@
           '<div class="big-chart-head">' +
             '<div>' +
               '<div class="big-amount">' + peso(r.amount) + '</div>' +
-              '<div class="sub">of ' + peso(r.budget) + ' weekly budget · ' +
-                (r.amount <= r.budget ? peso(r.budget - r.amount) + ' left' : peso(r.amount - r.budget) + ' over') + '</div>' +
+              '<div class="sub">of ' + peso(r.budget) + ' ' + (capNames[key] || '') + ' budget · ' +
+                (r.left >= 0 ? peso(r.left) + ' left' : peso(Math.abs(r.left)) + ' over') + '</div>' +
+              '<button class="budget-edit" data-act="edit-budget">' + icon('pencil') + ' Edit cap</button>' +
             '</div>' +
             '<div class="spend-tabs">' +
               sp.rangeOrder.map(function (k) {
-                return '<button class="spend-tab' + (state.spendingRange === k ? ' is-active' : '') + '" data-srange="' + k + '">' + sp.rangeLabels[k] + '</button>';
+                return '<button class="spend-tab' + (key === k ? ' is-active' : '') + '" data-srange="' + k + '">' + sp.rangeLabels[k] + '</button>';
               }).join('') +
             '</div>' +
           '</div>' +
@@ -3003,6 +3253,8 @@
           breakdown +
         '</section>' +
       '</div>' +
+
+      (recentHtml ? '<div class="recent-wrap">' + recentHtml + '</div>' : '') +
     '</div>';
   }
 
@@ -6043,6 +6295,9 @@
     $('#view-app').addEventListener('change', onAppChange);
     $('#add-modal').addEventListener('click', onAppClick);
     $('#add-modal').addEventListener('input', onAppInput);
+    /* the price capture and budget editor are plain onAppClick dialogs */
+    $('#price-modal').addEventListener('click', onAppClick);
+    $('#budget-modal').addEventListener('click', onAppClick);
     $('#cat-modal').addEventListener('click', onCatPanelClick);
     $('#cat-modal').addEventListener('change', onCatPanelChange);
     $('#cat-modal').addEventListener('keydown', onCatPanelKeydown);
@@ -6103,11 +6358,29 @@
         reviewTyped();
         return;
       }
+      if (e.key === 'Enter' && e.target && e.target.id === 'price-input') {
+        e.preventDefault();
+        confirmPrice();
+        return;
+      }
+      if (e.key === 'Enter' && e.target && e.target.id && e.target.id.indexOf('budget-') === 0) {
+        e.preventDefault();
+        confirmBudgets();
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.classList &&
+          e.target.classList.contains('stat--budget')) {
+        e.preventDefault();
+        openBudgetModal();
+        return;
+      }
       if (e.key === 'Escape') {
         closeDrawer();
         toggleProfileMenu(false);
         if (state.catPanelOpen) closeCategories();
         if (state.addModal && state.addModal.open) closeAddModal();
+        if ($('#price-modal') && $('#price-modal').classList.contains('show')) closePriceModal();
+        if ($('#budget-modal') && $('#budget-modal').classList.contains('show')) closeBudgetModal();
       }
     });
 
@@ -6120,10 +6393,182 @@
       .catch(function () { /* the SVG fallback is already in place */ });
   }
 
+  /* ========================= PRICE / BUDGET MODALS ======================= */
+  function removeLastPurchase(itemId) {
+    for (var i = state.purchases.length - 1; i >= 0; i--) {
+      if (state.purchases[i].itemId === itemId) {
+        state.purchases.splice(i, 1);
+        persistPurchases();
+        return;
+      }
+    }
+  }
+
+  /* the old toggle body, extracted so the price modal can finish it later */
+  function commitToggle(item, list) {
+    var msg = null;
+    item.done = !item.done;
+    if (cloudMode()) {
+      /* Supabase keeps the pantry in sync with a trigger. */
+      msg = item.name + (item.done ? ' moved to the pantry' : ' moved back to To Buy');
+    } else if (item.done) {
+      msg = addToInventory(item);
+    } else {
+      removeFromInventory(item);
+      msg = item.name + ' moved back to To Buy';
+    }
+    save(); render();
+    if (msg) toast(msg);
+
+    if (cloudMode()) {
+      var nextDone = item.done;
+      cloudToggleItem(item, nextDone).then(function (saved) {
+        /* keep the locally captured price even though the cloud row has no price column */
+        list.items = list.items.map(function (it) {
+          if (it.id !== saved.id) return it;
+          return Object.assign({}, saved, { price: it.price, purchasedAt: it.purchasedAt });
+        });
+        return cloudRefreshPantry().then(render).catch(function (err) {
+          render();
+          cloudError('Item saved, but the pantry could not refresh', err);
+        });
+      }).catch(function (err) {
+        item.done = !nextDone;
+        render();
+        cloudError('Could not update that item', err);
+      });
+    }
+  }
+
+  function openPriceModal(item) {
+    var body = $('#price-body');
+    if (!body) return;
+    state.pendingPurchase = { itemId: item.id };
+    var qty = qtyText(item.qty);
+    body.innerHTML =
+      '<div class="buy-preview">' +
+        '<span class="buy-preview-ico">' + icon('cart') + '</span>' +
+        '<span class="buy-preview-txt"><b>' + esc(item.name) + '</b>' +
+          '<small>' + esc(qty) + ' · ' + esc(catLabel(item.cat)) + '</small></span>' +
+      '</div>' +
+      '<p class="price-hint">Enter the price for this ' + esc(qty) + ' of ' + esc(item.name) +
+        '. It will be added to Spending insights.</p>' +
+      '<label class="pop-label" for="price-input">Price paid (₱)</label>' +
+      '<div class="price-field"><span class="cur">₱</span>' +
+        '<input class="input" id="price-input" type="number" min="0.01" step="0.01" ' +
+        'inputmode="decimal" placeholder="0.00" autocomplete="off"></div>' +
+      '<p class="price-error" id="price-error" hidden></p>';
+    $('#price-modal').classList.add('show');
+    setTimeout(function () {
+      var el = $('#price-input');
+      if (el) { el.focus(); el.select(); }
+    }, 40);
+  }
+
+  function closePriceModal() {
+    var m = $('#price-modal');
+    if (m) m.classList.remove('show');
+    state.pendingPurchase = null;
+  }
+
+  function confirmPrice() {
+    var pending = state.pendingPurchase;
+    var input = $('#price-input');
+    if (!pending || !input) return;
+    var err = $('#price-error');
+    var amount = Number(input.value);
+    if (!isFinite(amount) || amount <= 0) {
+      if (err) { err.textContent = 'Enter a price greater than zero.'; err.hidden = false; }
+      input.focus();
+      return;
+    }
+    if (amount > 1000000) {
+      if (err) { err.textContent = 'That price looks too high — please check it.'; err.hidden = false; }
+      input.focus();
+      return;
+    }
+    amount = Math.round(amount * 100) / 100;
+
+    var item = null, list = null;
+    state.lists.forEach(function (l) {
+      l.items.forEach(function (it) { if (it.id === pending.itemId) { item = it; list = l; } });
+    });
+    if (!item || !list) { closePriceModal(); return; }
+
+    item.price = amount;
+    item.purchasedAt = new Date().toISOString();
+    state.purchases.push({
+      id: 'p' + Date.now() + Math.floor(Math.random() * 100),
+      itemId: item.id,
+      name: item.name,
+      cat: item.cat,
+      qty: qtyText(item.qty),
+      amount: amount,
+      date: item.purchasedAt
+    });
+    persistPurchases();
+    closePriceModal();
+    commitToggle(item, list);
+    toast(money(amount) + ' logged for ' + item.name);
+  }
+
+  function openBudgetModal() {
+    var body = $('#budget-body');
+    if (!body) return;
+    var sp = D.spending;
+    body.innerHTML =
+      '<p class="price-hint">Set the cap for each period. Raise the weekly cap whenever your budget changes.</p>' +
+      '<div class="budget-grid">' +
+        sp.rangeOrder.map(function (k) {
+          return '<label class="budget-field' + (k === 'w1' ? ' is-primary' : '') + '">' +
+            '<span>' + esc(sp.ranges[k].label) + '</span>' +
+            '<span class="budget-input"><b>₱</b>' +
+              '<input class="input" id="budget-' + k + '" type="number" min="1" step="1" ' +
+              'inputmode="numeric" value="' + budgetFor(k) + '"></span>' +
+          '</label>';
+        }).join('') +
+      '</div>';
+    $('#budget-modal').classList.add('show');
+  }
+
+  function closeBudgetModal() {
+    var m = $('#budget-modal');
+    if (m) m.classList.remove('show');
+  }
+
+  function confirmBudgets() {
+    var sp = D.spending;
+    var next = defaultBudgets();
+    var bad = null;
+    sp.rangeOrder.forEach(function (k) {
+      var el = $('#budget-' + k);
+      if (!el) return;
+      var n = Number(el.value);
+      if (!isFinite(n) || n <= 0) { bad = k; return; }
+      next[k] = Math.round(n);
+    });
+    if (bad) { toast('Enter a valid amount for ' + sp.ranges[bad].label); return; }
+    state.budgets = next;
+    persistBudgets();
+    closeBudgetModal();
+    render();
+    toast('Budget caps updated');
+  }
+
+  function resetBudgets() {
+    state.budgets = defaultBudgets();
+    persistBudgets();
+    closeBudgetModal();
+    render();
+    toast('Budget caps reset to defaults');
+  }
+
   function onAppClick(e) {
     /* clicking the backdrop closes the add modal */
     if (e.target && e.target.id === 'add-modal') { closeAddModal(); return; }
-    var el = e.target.closest ? e.target.closest('[data-act],[data-route],[data-list],[data-tab],[data-cal],[data-day],[data-srange],[data-pantry],[data-scat],[data-sug-name],[data-unit]') : null;
+    if (e.target && e.target.id === 'price-modal') { closePriceModal(); return; }
+    if (e.target && e.target.id === 'budget-modal') { closeBudgetModal(); return; }
+    var el = e.target.closest ? e.target.closest('[data-act],[data-route],[data-list],[data-tab],[data-cal],[data-day],[data-srange],[data-pantry],[data-scat],[data-sug-name],[data-unit],[data-price],[data-budget]') : null;
     if (!el) return;
 
     /* --- add-item suggestions --- */
@@ -6195,6 +6640,19 @@
     }
     if (el.dataset.tab) { state.activeAisleTab = el.dataset.tab; render(); return; }
     if (el.dataset.srange) { state.spendingRange = el.dataset.srange; render(); return; }
+
+    /* --- price capture + budget editor --- */
+    if (el.dataset.price) {
+      if (el.dataset.price === 'close') closePriceModal();
+      else if (el.dataset.price === 'confirm') confirmPrice();
+      return;
+    }
+    if (el.dataset.budget) {
+      if (el.dataset.budget === 'close') closeBudgetModal();
+      else if (el.dataset.budget === 'reset') resetBudgets();
+      else if (el.dataset.budget === 'confirm') confirmBudgets();
+      return;
+    }
     if (el.dataset.cal) {
       if (el.dataset.cal === 'prev') state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() - 1, 1);
       else if (el.dataset.cal === 'next') state.calMonth = new Date(state.calMonth.getFullYear(), state.calMonth.getMonth() + 1, 1);
@@ -6205,42 +6663,19 @@
     if (el.dataset.day) { state.selectedDay = el.dataset.day; render(); return; }
 
     switch (el.dataset.act) {
+      case 'edit-budget': openBudgetModal(); break;
       case 'toggle': {
         var row = el.closest('.item-row');
         var list = activeList();
-        var msg = null;
-        var changed = null;
-        list.items.forEach(function (it) {
-          if (it.id !== row.dataset.id) return;
-          it.done = !it.done;
-          changed = it;
-          if (cloudMode()) {
-            /* Supabase keeps the pantry in sync with a trigger. */
-            msg = it.name + (it.done ? ' moved to the pantry' : ' moved back to To Buy');
-          } else if (it.done) {
-            msg = addToInventory(it);
-          } else {
-            removeFromInventory(it);
-            msg = it.name + ' moved back to To Buy';
-          }
-        });
-        save(); render();
-        if (msg) toast(msg);
+        var item = null;
+        list.items.forEach(function (it) { if (it.id === row.dataset.id) item = it; });
+        if (!item) break;
 
-        if (cloudMode() && changed) {
-          var nextDone = changed.done;
-          cloudToggleItem(changed, nextDone).then(function (saved) {
-            list.items = list.items.map(function (it) { return it.id === saved.id ? saved : it; });
-            return cloudRefreshPantry().then(render).catch(function (err) {
-              render();
-              cloudError('Item saved, but the pantry could not refresh', err);
-            });
-          }).catch(function (err) {
-            changed.done = !nextDone;
-            render();
-            cloudError('Could not update that item', err);
-          });
-        }
+        /* Buying: ask for the price first so the purchase can be logged.
+           Unchecking: roll back the matching purchase, no prompt needed. */
+        if (!item.done) { openPriceModal(item); break; }
+        removeLastPurchase(item.id);
+        commitToggle(item, list);
         break;
       }
       case 'del': {
@@ -6567,6 +7002,7 @@
   /* =============================== INIT ================================== */
   function init() {
     load();
+    loadSpending();
     state.guideDismissed = readGuideDismissed();
     initBirthdaySelects();
     bindInviteModal();

@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=20">
+<link rel="stylesheet" href="assets/css/styles.css?v=21">
 </head>
 <body>
 
@@ -586,11 +586,51 @@
   </div>
 </div>
 
+<!-- ============ log a purchase (price captured before checking an item) ============ -->
+<div class="modal" id="price-modal" role="dialog" aria-modal="true" aria-labelledby="price-title">
+  <div class="modal-box modal-box--sm" id="price-panel">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Before you check it off</span>
+        <h2 id="price-title">Log a purchase</h2>
+      </div>
+      <button class="drawer-close" data-price="close" aria-label="Close">
+        <svg><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="price-body"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" data-price="close">Cancel</button>
+      <button class="btn-primary-sm" data-price="confirm">Log price &amp; check off</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ edit household budget caps (weekly / monthly / etc.) ============ -->
+<div class="modal" id="budget-modal" role="dialog" aria-modal="true" aria-labelledby="budget-title">
+  <div class="modal-box modal-box--sm" id="budget-panel">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Household budget</span>
+        <h2 id="budget-title">Edit budget caps</h2>
+      </div>
+      <button class="drawer-close" data-budget="close" aria-label="Close">
+        <svg><use href="#i-x"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="budget-body"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" data-budget="reset">Reset defaults</button>
+      <button class="btn-primary-sm" data-budget="confirm">Save budgets</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://accounts.google.com/gsi/client?hl=en" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=10"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=36"></script>
+<script src="assets/js/app.js?v=37"></script>
 </body>
 </html>
