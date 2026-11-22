@@ -4724,11 +4724,13 @@
 
   function passwordProblems(pw) {
     var out = [];
-    var trimmed = String(pw || '').trim();
-    if (!trimmed || /^\s+$/.test(String(pw))) out.push('Enter your password.');
+    var raw = String(pw == null ? '' : pw);
+    var trimmed = raw.trim();
+    if (!trimmed) out.push('Enter your password.');
     else {
-      /* a password cannot be salvaged by hiding whitespace: check the
-         trimmed form so "10 spaces + 1a" fails the same as "1a" */
+      /* NO whitespace anywhere — a space is not a real password character
+         for this app. Catch leading, trailing AND interior spaces. */
+      if (/\s/.test(raw)) out.push('Spaces are not allowed in the password.');
       if (trimmed.length < 8) out.push('Use at least 8 characters.');
       if (!/[a-zA-Z]/.test(trimmed)) out.push('Include a letter.');
       if (!/[0-9]/.test(trimmed)) out.push('Include a number.');
@@ -4858,7 +4860,7 @@
 
     /* dropped before sending: even if the email fails, no session survives */
     S.client.auth.signOut({ scope: 'local' }).catch(function () {});
-    S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } })
+    otp().auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } })
       .then(function (r) {
         if (r && r.error) throw r.error;
         authNote('Your account is created. A code was sent to ' + email + ' — enter it above.', 'ok');
@@ -4922,6 +4924,29 @@
   }
 
   /* ---------------------------------------------------------- supabase ops */
+  /* OTP codes (Google verification / password reset) must NOT go through the
+     PKCE client — PKCE ties the emailed code to a verifier and verifyOtp then
+     fails with "otp_expired" even for a fresh, correct code. This second
+     client uses the implicit flow strictly for email OTPs; Google OAuth keeps
+     using the secure PKCE client above. */
+  var otpClient = null;
+  function otp() {
+    if (otpClient) return otpClient;
+    if (!S.client || !globalSupabaseCreateClient()) return S.client;
+    try {
+      otpClient = globalSupabaseCreateClient(S.url, S.anonKey || configKey(), {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' }
+      });
+    } catch (e) { otpClient = S.client; }
+    return otpClient;
+  }
+  function globalSupabaseCreateClient() {
+    return (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) || null;
+  }
+  function configKey() {
+    return (typeof window !== 'undefined' && window.BILILIST_CONFIG && window.BILILIST_CONFIG.supabaseAnonKey) || '';
+  }
+
   /* Boolean-only lookup of whether an email already has an account.
      If the RPC has not been deployed yet, fall back to letting Supabase
      handle it (it still blocks a real duplicate server-side). */
@@ -5281,7 +5306,7 @@
       authNote('Demo mode — no reset email was sent. Add your Supabase keys in assets/js/config.js to enable real emails.', 'info');
       return;
     }
-    S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
+    otp().auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
       .then(function (r) {
         if (r && r.error) { authNote('We could not send the reset code: ' + r.error.message, 'error'); return; }
         authNote('If an account exists for ' + email + ', a reset code is on its way.', 'ok');
@@ -5297,11 +5322,11 @@
     /* an OAuth account has no signUp OTP to replay, so its resend also goes
        through signInWithOtp */
     if (auth.purpose === 'google') {
-      req = S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } });
+      req = otp().auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } });
     } else if (auth.purpose === 'recovery') {
-      req = S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() });
+      req = otp().auth.resetPasswordForEmail(email, { redirectTo: redirectTo() });
     } else {
-      req = S.client.auth.resend({ type: 'signup', email: email });
+      req = otp().auth.resend({ type: 'signup', email: email });
     }
 
     req.then(function (r) {
@@ -5321,11 +5346,11 @@
               : auth.purpose === 'google' ? ['magiclink', 'email']
               : ['signup'];
 
-    S.client.auth.verifyOtp({ email: email, token: token, type: types[0] })
+    otp().auth.verifyOtp({ email: email, token: token, type: types[0] })
       .then(function (r) {
         if (r.error && types.length > 1 && /invalid|incorrect|expired/i.test(r.error.message)) {
           /* retry with the next candidate type before giving up */
-          return S.client.auth.verifyOtp({ email: email, token: token, type: types[1] });
+          return otp().auth.verifyOtp({ email: email, token: token, type: types[1] });
         }
         return r;
       })
@@ -5340,6 +5365,17 @@
           return;
         }
 
+        /* The OTP client is separate (implicit flow), so copy the verified
+           session into the main PKCE client the rest of the app uses. */
+        var verifiedSession = r.data && r.data.session;
+        var adoptSession = function () {
+          if (!verifiedSession || !S.client) return Promise.resolve();
+          return S.client.auth.setSession({
+            access_token: verifiedSession.access_token,
+            refresh_token: verifiedSession.refresh_token
+          });
+        };
+
         if (auth.purpose === 'recovery') {
           auth.user = r.data.user || null;
           $('#f-pass').value = '';
@@ -5352,7 +5388,9 @@
 
         /* only a checked code releases the parking marker */
         if (auth.purpose === 'google') setPendingVerify('');
-        routeAfterAuth(r.data.user);
+        adoptSession().then(function () {
+          routeAfterAuth(r.data.user || (verifiedSession && verifiedSession.user));
+        });
       }).catch(function (e) { authError('err-code', e.message); });
   }
 

@@ -114,6 +114,8 @@
 
   global.BiliSupabase = {
     client: client,
+    url: url,
+    anonKey: key,
     isConfigured: !!client,
     mode: client ? 'supabase' : 'demo',
     url: url,
