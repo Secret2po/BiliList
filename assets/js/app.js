@@ -4942,6 +4942,11 @@
 
   /* "Forgot password?" -> email a reset code, then ask for it */
   function startRecovery(email) {
+    /* every entry point into the reset flow must pass the same .com rule —
+       this also covers any stale cached script or a future caller */
+    var problem = emailProblem(email);
+    if (problem) { authError('err-email', problem); $('#f-email').focus(); return; }
+
     auth.purpose = 'recovery';
     auth.pendingEmail = email;
     setAuthStep('verify');
@@ -5665,6 +5670,14 @@
     window.addEventListener('pageshow', function (e) {
       if (!e.persisted) return;
       setGoogleBusy(false);
+      /* a restored page must not show stale half-typed form values either */
+      if (auth.step === 'signin' || auth.step === 'signup') {
+        ['f-first', 'f-middle', 'f-last', 'f-suffix', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+          var field = $('#' + id);
+          if (field) field.value = '';
+        });
+        setBirthday('');
+      }
       if (!isOAuthPending()) return;
 
       var cancelled = function () {
@@ -6195,6 +6208,18 @@
     }
 
     setAuthStep('signin');
+    /* A fresh page load (or a device restart) always starts with an empty
+       sign-in form. The browser used to restore half-typed names/emails from
+       its back-forward cache, which looked like the app "remembered" them. */
+    ['f-first', 'f-middle', 'f-last', 'f-suffix', 'f-email', 'f-pass', 'f-pass2', 'f-code'].forEach(function (id) {
+      var field = $('#' + id);
+      if (field) field.value = '';
+    });
+    setBirthday('');
+    auth.pendingEmail = '';
+    auth.user = null;
+    auth.purpose = 'signup';
+
     if (!S.client) {
       if (S.hasUrl && !S.hasKey) {
         showConnectBox();
