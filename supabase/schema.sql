@@ -438,10 +438,38 @@ declare
   v_uid uuid := auth.uid();
   v_ws uuid;
   v_name text;
+  v_meta jsonb;
 begin
   if v_uid is null then
     raise exception 'Not authenticated';
   end if;
+
+  -- No profile exists yet for a brand-new (but now verified) sign-up — the
+  -- auth trigger deliberately creates nothing. Build it from the metadata
+  -- the sign-up form / Google onboarding collected, then seed the household.
+  -- For returning users the row already exists and this is a no-op.
+  select raw_user_meta_data into v_meta from auth.users where id = v_uid;
+
+  insert into public.profiles (id, username, full_name, avatar, profile_complete)
+  values (
+    v_uid,
+    nullif(trim(coalesce(v_meta ->> 'username', '')), ''),
+    coalesce(
+      nullif(trim(v_meta ->> 'full_name'), ''),
+      nullif(trim(concat_ws(' ',
+        v_meta ->> 'first_name', v_meta ->> 'middle_name',
+        v_meta ->> 'last_name', v_meta ->> 'suffix')), ''),
+      nullif(trim(split_part(coalesce((select email from auth.users where id = v_uid), ''), '@', 1)), ''),
+      'Friend'
+    ),
+    coalesce(
+      nullif(trim(v_meta ->> 'avatar_url'), ''),
+      nullif(trim(v_meta ->> 'picture'), ''),
+      upper(left(coalesce(v_meta ->> 'full_name', 'F'), 1))
+    ),
+    true
+  )
+  on conflict (id) do nothing;
 
   select m.workspace_id into v_ws
   from public.workspace_members m
@@ -512,70 +540,11 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_ws uuid;
-  v_first text;
-  v_middle text;
-  v_last text;
-  v_suffix text;
-  v_name text;
-  v_username text;
-  v_avatar text;
-  v_complete boolean;
 begin
-  v_first := nullif(trim(coalesce(
-    new.raw_user_meta_data ->> 'first_name',
-    new.raw_user_meta_data ->> 'given_name',
-    ''
-  )), '');
-  v_middle := nullif(trim(coalesce(new.raw_user_meta_data ->> 'middle_name', '')), '');
-  v_last := nullif(trim(coalesce(
-    new.raw_user_meta_data ->> 'last_name',
-    new.raw_user_meta_data ->> 'family_name',
-    ''
-  )), '');
-  v_suffix := nullif(trim(coalesce(new.raw_user_meta_data ->> 'suffix', '')), '');
-
-  v_name := nullif(trim(concat_ws(' ', v_first, v_middle, v_last, v_suffix)), '');
-  v_name := coalesce(
-    v_name,
-    nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),
-    nullif(trim(new.raw_user_meta_data ->> 'name'), ''),
-    nullif(trim(split_part(coalesce(new.email, ''), '@', 1)), ''),
-    'Friend'
-  );
-
-  v_username := nullif(trim(coalesce(new.raw_user_meta_data ->> 'username', '')), '');
-  v_avatar := coalesce(
-    nullif(trim(new.raw_user_meta_data ->> 'avatar_url'), ''),
-    nullif(trim(new.raw_user_meta_data ->> 'picture'), ''),
-    upper(left(v_name, 1))
-  );
-
-  -- e-mail sign-ups have already supplied the required first and last name;
-  -- Google sign-ups confirm their profile in the app before they enter
-  v_complete := coalesce(new.raw_app_meta_data ->> 'provider', '') = 'email'
-                and v_first is not null
-                and v_last is not null;
-
-  insert into public.profiles (id, username, full_name, avatar, profile_complete)
-  values (new.id, v_username, v_name, v_avatar, v_complete)
-  on conflict (id) do update
-    set full_name = excluded.full_name,
-        avatar    = excluded.avatar,
-        username  = coalesce(profiles.username, excluded.username),
-        profile_complete = profiles.profile_complete or excluded.profile_complete;
-
-  insert into public.workspaces (name, kind, owner_id)
-  values (v_name || '''s household', 'household', new.id)
-  returning id into v_ws;
-
-  insert into public.workspace_members (workspace_id, user_id, role, online)
-  values (v_ws, new.id, 'owner', true)
-  on conflict do nothing;
-
-  perform public.seed_workspace(v_ws);
-
+  -- Deliberately does nothing. The BiliLIST profile and household are now
+  -- created by ensure_user_workspace() on the first authenticated app load,
+  -- which only happens after the emailed code/link has been checked. An
+  -- abandoned or unverified sign-up therefore leaves no household data.
   return new;
 end;
 $$;

@@ -4497,7 +4497,7 @@
 
     /* dropped before sending: even if the email fails, no session survives */
     S.client.auth.signOut({ scope: 'local' }).catch(function () {});
-    S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false } })
+    S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } })
       .then(function (r) {
         if (r && r.error) throw r.error;
         authNote('Your account is created. A code was sent to ' + email + ' — enter it above.', 'ok');
@@ -4529,21 +4529,10 @@
       birthday: details.birthday || null
     };
 
-    S.client.from('profiles')
-      .update({
-        full_name: details.fullName,
-        profile_complete: true
-      })
-      .eq('id', auth.user.id)
-      .select('*')
-      .maybeSingle()
-      .then(function (r) {
-        if (r && r.error) throw r.error;
-        if (!r || !r.data) throw new Error('Could not save your details. Please try again.');
-        /* The password turns a Google-only account into one that can also use
-           the email login form, so a failure must not be swallowed here. */
-        return S.client.auth.updateUser({ password: pw, data: meta });
-      })
+    /* No profile row exists yet on purpose — the database creates it (and
+       the household) only after the emailed code/link is verified. For now
+       keep the chosen details and password on the auth user itself. */
+    S.client.auth.updateUser({ password: pw, data: meta })
       .then(function (r) {
         if (r && r.error) throw r.error;
 
@@ -4581,7 +4570,12 @@
       .catch(function () { return { taken: false, fingerprint: null }; });
   }
 
+  var APP_URL = 'https://secret2po.github.io/BiliList/';
   function redirectTo() {
+    /* On the deployed Pages site the app lives at /BiliList/ — using the
+       bare origin would send email verify links to secret2po.github.io,
+       which has no Pages site and returns a 404. Always use the full path. */
+    if (/github\.io$/i.test(window.location.hostname)) return APP_URL;
     return window.location.origin + window.location.pathname;
   }
 
@@ -4933,7 +4927,7 @@
     /* an OAuth account has no signUp OTP to replay, so its resend also goes
        through signInWithOtp */
     if (auth.purpose === 'google') {
-      req = S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false } });
+      req = S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false, redirectTo: redirectTo() } });
     } else if (auth.purpose === 'recovery') {
       req = S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() });
     } else {
@@ -6117,6 +6111,11 @@
         }
 
         if (session && user) {
+          /* startGoogleVerify() drops the local session, so if a session is
+             here now the person just followed the emailed verify link (or
+             checked the code in another tab). Release the marker so they
+             are not sent straight back to the verify screen. */
+          if (readPendingVerify() === String(user.email || '').toLowerCase()) setPendingVerify('');
           var h = (window.location.hash || '').replace('#/', '');
           var route = ['lists', 'spending'].indexOf(h) !== -1 ? h : 'dashboard';
           routeAfterAuth(user, { google: !!oauth.pending, route: route });
