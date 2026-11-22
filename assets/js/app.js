@@ -4306,8 +4306,8 @@
           : 'One last step — enter the code we emailed you to confirm your account.';
       btn.querySelector('span').textContent = auth.purpose === 'recovery' ? 'Continue' : 'Verify email';
       $('#code-hint').textContent = auth.pendingEmail
-        ? 'We sent a 6-digit code to ' + auth.pendingEmail
-        : 'We sent you a 6-digit code.';
+        ? 'We sent a code to ' + auth.pendingEmail
+        : 'We sent you a code.';
       $('#auth-secondary').innerHTML = '<span>Changed your mind?</span> <a class="link-green" href="#" id="link-signin">Back to sign in</a>';
     } else if (isOnboard) {
       heading.textContent = 'Create your BiliLIST account';
@@ -4500,7 +4500,7 @@
     S.client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: false } })
       .then(function (r) {
         if (r && r.error) throw r.error;
-        authNote('Your account is created. A 6-digit code was sent to ' + email + ' — enter it above.', 'ok');
+        authNote('Your account is created. A code was sent to ' + email + ' — enter it above.', 'ok');
       })
       .catch(function (e) {
         authNote('Your account was created, but the verification email could not be sent (' + e.message + '). Use "Resend code" below.', 'error');
@@ -4920,7 +4920,7 @@
     S.client.auth.resetPasswordForEmail(email, { redirectTo: redirectTo() })
       .then(function (r) {
         if (r && r.error) { authNote('We could not send the reset code: ' + r.error.message, 'error'); return; }
-        authNote('If an account exists for ' + email + ', a 6-digit reset code is on its way.', 'ok');
+        authNote('If an account exists for ' + email + ', a reset code is on its way.', 'ok');
       }).catch(function (e) { authNote('We could not send the reset code: ' + e.message, 'error'); });
   }
 
@@ -5068,7 +5068,7 @@
         auth.pendingEmail = email;
         setAuthStep('verify');
         $('#f-code').value = '';
-        authNote('Account created. We emailed a verification message to ' + email + '. Enter the 6-digit code, or open the confirmation link in that email.', 'ok');
+        authNote('Account created. We emailed a verification message to ' + email + '. Enter the code, or open the confirmation link in that email.', 'ok');
         $('#f-code').focus();
       }).catch(function (e) { authError('err-pass', e.message); });
     });
@@ -5167,7 +5167,7 @@
     if (user && !user.email_confirmed_at && provider === 'email') {
       state.signedIn = false;
       showLogin();
-      authNote('Please verify your email before signing in. Check your inbox for the 6-digit code.', 'error');
+      authNote('Please verify your email before signing in. Check your inbox for the code.', 'error');
       return Promise.resolve();
     }
 
@@ -5297,8 +5297,8 @@
 
     /* ---- step 2 of sign-up: the emailed code ---- */
     if (auth.step === 'verify') {
-      if (!code) { authError('err-code', 'Enter the 6-digit code from your email.'); $('#f-code').focus(); return; }
-      if (code.length !== 6) { authError('err-code', 'The code is 6 digits long.'); $('#f-code').focus(); return; }
+      if (!code) { authError('err-code', 'Enter the code from your email.'); $('#f-code').focus(); return; }
+      if (!/^\d{6,8}$/.test(code)) { authError('err-code', 'The code is 6–8 digits long.'); $('#f-code').focus(); return; }
       verifyCode(auth.pendingEmail, code);
       return;
     }
