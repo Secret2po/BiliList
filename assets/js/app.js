@@ -18,6 +18,8 @@
   /* Hard ceilings per period. No cap can ever be saved above these values —
      they keep the chart scales, percentages and totals inside safe ranges. */
   var BUDGET_MAX = { w1: 10000, m1: 45000, m3: 135000, m6: 270000, y1: 500000 };
+  /* A single logged item can never cost more than this. */
+  var PRICE_MAX = 10000;
 
   /* When a Supabase session is active, this is the source of truth. The
      localStorage prototype state is only used for demo / offline mode. */
@@ -113,7 +115,8 @@
        Kept locally so it survives both demo mode and cloud mode. */
     purchases: [],
     budgets: null,
-    pendingPurchase: null
+    pendingPurchase: null,
+    breakdownMode: 'aisle'   /* 'aisle' | 'item' for "Where it went" */
   };
 
   /* ------------------------------------------------------- account boot-up */
@@ -624,7 +627,13 @@
     try {
       var raw = localStorage.getItem(PURCHASE_KEY);
       var data = raw ? JSON.parse(raw) : null;
-      state.purchases = Array.isArray(data) ? data : [];
+      /* even a corrupted / hand-edited save cannot inject an oversized price */
+      state.purchases = Array.isArray(data) ? data.map(function (p) {
+        var copy = Object.assign({}, p);
+        var n = Number(copy.amount);
+        copy.amount = isFinite(n) && n > 0 ? Math.min(n, PRICE_MAX) : 0;
+        return copy;
+      }) : [];
     } catch (e) { state.purchases = []; }
 
     try {
@@ -2125,17 +2134,26 @@
     return 'wheat';
   }
 
-  function computeBreakdown(key) {
+  function computeBreakdown(key, mode) {
+    var byItem = mode === 'item';
     var groups = {};
     purchasesIn(key).forEach(function (p) {
-      var name = catLabel(p.cat);
-      if (!groups[name]) groups[name] = 0;
-      groups[name] += Number(p.amount) || 0;
+      /* fall back to "Everything else" if an old purchase has no category */
+      var cat = p.cat && catLabel(p.cat) !== p.cat ? p.cat : 'other';
+      var name = byItem ? (p.name || 'Item') : catLabel(cat);
+      if (!groups[name]) groups[name] = { amount: 0, cat: cat, qty: byItem ? (p.qty || '') : '' };
+      groups[name].amount += Number(p.amount) || 0;
     });
     var total = 0;
-    Object.keys(groups).forEach(function (k) { total += groups[k]; });
+    Object.keys(groups).forEach(function (k) { total += groups[k].amount; });
     return Object.keys(groups).map(function (k) {
-      return { name: k, amount: groups[k], pct: total ? Math.round((groups[k] / total) * 100) : 0 };
+      return {
+        name: k,
+        amount: groups[k].amount,
+        pct: total ? Math.round((groups[k].amount / total) * 100) : 0,
+        tone: toneForCat(catLabel(groups[k].cat)),
+        qty: groups[k].qty
+      };
     }).sort(function (a, b) { return b.amount - a.amount; });
   }
 
@@ -3206,12 +3224,13 @@
       '</div>';
     }).join('');
 
-    var rows = computeBreakdown(key);
+    var rows = computeBreakdown(key, state.breakdownMode);
     var breakdown = rows.length
       ? rows.map(function (b) {
           return '<div class="breakdown-row">' +
-            '<div class="bd-top"><span class="bd-name"><i class="bd-dot tone-' + toneForCat(b.name) + '"></i>' +
-              '<b>' + esc(b.name) + '</b></span><span>' + money(b.amount) + '</span></div>' +
+            '<div class="bd-top"><span class="bd-name"><i class="bd-dot tone-' + b.tone + '"></i>' +
+              '<b>' + esc(b.name) + '</b>' + (b.qty ? '<small class="bd-qty">' + esc(b.qty) + '</small>' : '') +
+              '</span><span>' + money(b.amount) + '</span></div>' +
             '<div class="bd-bar"><i style="width:' + b.pct + '%"></i></div>' +
             '<div class="bd-pct">' + b.pct + '% of household spending</div>' +
           '</div>';
@@ -3277,7 +3296,10 @@
 
         '<section class="card breakdown">' +
           '<div class="card-head"><span class="card-title">Where it went</span>' +
-            '<button class="card-more">By aisle ' + icon('chevron-down') + '</button></div>' +
+            '<button class="card-more breakdown-toggle" data-act="breakdown-mode" ' +
+              'title="Switch grouping" aria-label="Switch between aisle and item grouping">' +
+              (state.breakdownMode === 'aisle' ? 'By aisle' : 'By item') + ' ' + icon('chevron-down') +
+            '</button></div>' +
           breakdown +
         '</section>' +
       '</div>' +
@@ -6326,6 +6348,22 @@
     /* the price capture and budget editor are plain onAppClick dialogs */
     $('#price-modal').addEventListener('click', onAppClick);
     $('#budget-modal').addEventListener('click', onAppClick);
+    /* block an oversized item price as it is typed */
+    $('#price-modal').addEventListener('input', function (e) {
+      if (!e.target || e.target.id !== 'price-input') return;
+      var err = $('#price-error');
+      var n = Number(e.target.value);
+      if (e.target.value !== '' && (!isFinite(n) || n <= 0)) {
+        if (err) { err.textContent = 'Enter a price greater than zero.'; err.hidden = false; }
+        e.target.classList.add('is-invalid');
+      } else if (n > PRICE_MAX) {
+        if (err) { err.textContent = 'Maximum allowed is ' + peso(PRICE_MAX) + '.'; err.hidden = false; }
+        e.target.classList.add('is-invalid');
+      } else {
+        if (err) { err.hidden = true; err.textContent = ''; }
+        e.target.classList.remove('is-invalid');
+      }
+    });
     /* warn immediately when a cap goes past its safety ceiling */
     $('#budget-modal').addEventListener('input', function (e) {
       if (!e.target || !e.target.id || e.target.id.indexOf('budget-') !== 0) return;
@@ -6499,10 +6537,10 @@
           '<small>' + esc(qty) + ' · ' + esc(catLabel(item.cat)) + '</small></span>' +
       '</div>' +
       '<p class="price-hint">Enter the price for this ' + esc(qty) + ' of ' + esc(item.name) +
-        '. It will be added to Spending insights.</p>' +
+        '. Maximum ' + peso(PRICE_MAX) + ' per item.</p>' +
       '<label class="pop-label" for="price-input">Price paid (₱)</label>' +
       '<div class="price-field"><span class="cur">₱</span>' +
-        '<input class="input" id="price-input" type="number" min="0.01" step="0.01" ' +
+        '<input class="input" id="price-input" type="number" min="0.01" max="' + PRICE_MAX + '" step="0.01" ' +
         'inputmode="decimal" placeholder="0.00" autocomplete="off"></div>' +
       '<p class="price-error" id="price-error" hidden></p>';
     $('#price-modal').classList.add('show');
@@ -6529,8 +6567,9 @@
       input.focus();
       return;
     }
-    if (amount > 1000000) {
-      if (err) { err.textContent = 'That price looks too high — please check it.'; err.hidden = false; }
+    if (amount > PRICE_MAX) {
+      if (err) { err.textContent = 'Maximum allowed is ' + peso(PRICE_MAX) + '.'; err.hidden = false; }
+      input.classList.add('is-invalid');
       input.focus();
       return;
     }
@@ -6740,6 +6779,10 @@
 
     switch (el.dataset.act) {
       case 'edit-budget': openBudgetModal(); break;
+      case 'breakdown-mode':
+        state.breakdownMode = state.breakdownMode === 'aisle' ? 'item' : 'aisle';
+        render();
+        break;
       case 'toggle': {
         var row = el.closest('.item-row');
         var list = activeList();

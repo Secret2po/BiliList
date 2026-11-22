@@ -2720,3 +2720,17 @@ html.theme-switching *::after {
   .chart-plot .chart-col .val { font-size: 9px; }
 }
 :root[data-theme="dark"] .chart-lines i:last-child { border-top-color: var(--line); }
+
+/* price ceiling + breakdown grouping */
+.price-field .input.is-invalid {
+  border-color: var(--danger-text);
+  box-shadow: 0 0 0 3px rgba(192,69,59,.12);
+}
+.breakdown-toggle { cursor: pointer; border-radius: 8px; }
+.breakdown-toggle:hover { background: var(--cream-100); color: var(--green-text); }
+.breakdown-toggle svg { width: 12px; height: 12px; }
+.bd-qty {
+  font-size: 10px; font-weight: 500; color: var(--muted-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.breakdown-row .bd-name { flex: 1 1 auto; }
