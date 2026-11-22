@@ -304,6 +304,33 @@ $$;
 revoke all on function public.respond_to_invite(text, boolean) from public;
 grant execute on function public.respond_to_invite(text, boolean) to authenticated;
 
+-- Every workspace the signed-in user belongs to (owned or invited), with a
+-- member count and their role. Powers the household switcher so accepting an
+-- invite makes the new household appear in the invitee's switcher immediately.
+create or replace function public.my_workspaces()
+returns table (
+  id uuid,
+  name text,
+  kind text,
+  role text,
+  member_count bigint
+)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select w.id, w.name, w.kind::text, m.role::text,
+         (select count(*) from public.workspace_members x where x.workspace_id = w.id)
+  from public.workspace_members m
+  join public.workspaces w on w.id = m.workspace_id
+  where m.user_id = auth.uid()
+  order by m.joined_at;
+$$;
+
+revoke all on function public.my_workspaces() from public;
+grant execute on function public.my_workspaces() to authenticated;
+
 -- --------------------------------------------------------------------------
 --  4. Helper functions used by the row level security policies
 -- --------------------------------------------------------------------------

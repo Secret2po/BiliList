@@ -2545,3 +2545,11 @@ html.theme-switching *::after {
 .invite-error[hidden] { display: none; }
 .pending-actions { display: flex; gap: 6px; flex: none; }
 .pending-actions .btn-resend { width: auto; padding: 0 10px; }
+
+.app-body, .topbar-inner, .page { max-width: none; }
+.app-body { width: 100%; }
+.dash { grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(280px, 340px); gap: clamp(14px, 1.6vw, 24px); }
+@media (max-width: 1024px) {
+  .drawer { width: 100%; max-width: 100%; border-radius: 0; }
+  .drawer-scroll { padding: 18px 16px calc(26px + env(safe-area-inset-bottom)); }
+}

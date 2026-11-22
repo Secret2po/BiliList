@@ -853,7 +853,9 @@
         S.client.from('events').select('*').eq('workspace_id', workspace.id).order('starts_at', { ascending: true }),
         /* the two new tables may not exist until schema.sql is re-run */
         S.client.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        S.client.from('workspace_invites').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: false })
+        S.client.from('workspace_invites').select('*').eq('workspace_id', workspace.id).order('created_at', { ascending: false }),
+        /* all households this account belongs to, for the switcher */
+        S.client.rpc('my_workspaces')
       ]).then(function (res) {
         var categories = cloudData(res[0], 'categories');
         var lists = cloudData(res[1], 'lists');
@@ -862,6 +864,7 @@
         var events = cloudData(res[4], 'events');
         var notifications = cloudData(res[5], 'notifications');
         var invites = cloudData(res[6], 'workspace_invites');
+        var myWorkspaces = (res[7] && res[7].data) || [];
 
         /* An account should always have somewhere to put an item. */
         var listsPromise = lists.length
@@ -898,6 +901,7 @@
                 events: events,
                 notifications: notifications,
                 invites: invites,
+                myWorkspaces: myWorkspaces,
                 profiles: cloudData(pr, 'profiles')
               };
             });
@@ -984,13 +988,26 @@
     state.members = mapCloudMembers(snapshot.members, snapshot.profiles, state.user);
 
     var memberCount = state.members.length;
-    state.workspaces = [{
-      id: snapshot.workspace.id,
-      name: snapshot.workspace.name,
-      sub: memberCount + ' member' + (memberCount === 1 ? '' : 's') + " · You're the owner",
-      icon: snapshot.workspace.kind === 'friend_group' ? 'friends' : 'house',
-      active: true
-    }];
+    var rows = (snapshot.myWorkspaces && snapshot.myWorkspaces.length)
+      ? snapshot.myWorkspaces
+      : [{ id: snapshot.workspace.id, name: snapshot.workspace.name, kind: snapshot.workspace.kind, role: 'owner', member_count: memberCount }];
+
+    /* the snapshot's data belongs to snapshot.workspace — keep that active;
+       clicking another entry in the switcher reloads its own snapshot */
+    var activeId = snapshot.workspace.id;
+
+    state.workspaces = rows.map(function (w) {
+      var roleText = String(w.role || '').toLowerCase();
+      var sub = Number(w.member_count || 1) + ' member' + (Number(w.member_count || 1) === 1 ? '' : 's') + ' · ' +
+        (roleText === 'owner' ? "You're the owner" : "You're " + (roleText || 'a member'));
+      return {
+        id: w.id,
+        name: w.name,
+        sub: sub,
+        icon: w.kind === 'friend_group' ? 'friends' : 'house',
+        active: w.id === activeId
+      };
+    });
 
     var byList = {};
     snapshot.items.forEach(function (row) {
@@ -1232,6 +1249,33 @@
       cloud.active = false;
       cloud.ready = false;
       throw err;
+    });
+  }
+
+  /* Switch to another household the account belongs to. Fetch its workspace
+     row first, then run the normal snapshot pipeline against it. */
+  function switchWorkspace(id, label) {
+    if (!S.client || !id || id === cloud.workspaceId) {
+      closeDrawer();
+      return;
+    }
+    cloud.loading = true;
+    showAppLoading('Switching to ' + (label || 'household') + '…');
+    S.client.from('workspaces').select('*').eq('id', id).single().then(function (r) {
+      if (r.error) throw r.error;
+      return fetchCloudSnapshot(state.user || { id: cloud.userId }, r.data);
+    }).then(function (snapshot) {
+      applyCloudSnapshot(snapshot);
+      cloud.loading = false;
+      hideAppLoading();
+      try { startRealtime(); } catch (e) { console.warn('Realtime unavailable', e); }
+      closeDrawer();
+      render();
+      toast('Now in ' + (label || 'that household'));
+    }).catch(function (err) {
+      cloud.loading = false;
+      hideAppLoading();
+      cloudError('Could not switch household', err);
     });
   }
 
@@ -5829,7 +5873,8 @@
     $('#pmenu').addEventListener('click', function (e) {
       var wsBtn = e.target.closest('.pmenu-ws');
       if (wsBtn) {
-        state.workspaces.forEach(function (w) { w.active = w.id === wsBtn.dataset.ws; });
+        var targetWs = state.workspaces.filter(function (w) { return w.id === wsBtn.dataset.ws; })[0] || {};
+        switchWorkspace(wsBtn.dataset.ws, targetWs.name);
         renderTopbar();
         toggleProfileMenu(false);
         toast('Switched to ' + activeWorkspace().name);
@@ -6391,9 +6436,8 @@
     }
 
     if (el.dataset.ws) {
-      state.workspaces.forEach(function (w) { w.active = w.id === el.dataset.ws; });
-      renderDrawer();
-      toast('Switched to ' + (state.workspaces.filter(function (w) { return w.active; })[0] || {}).name);
+      var target = state.workspaces.filter(function (w) { return w.id === el.dataset.ws; })[0] || {};
+      switchWorkspace(el.dataset.ws, target.name);
       return;
     }
     if (el.dataset.resend) {
