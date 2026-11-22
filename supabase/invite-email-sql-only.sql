@@ -1,33 +1,34 @@
 -- ==========================================================================
---  BiliLIST — invite emails WITHOUT an Edge Function or CLI
+--  BiliLIST — invite emails via Gmail (Google Apps Script), no Brevo / no CLI
 --  Run this in Supabase → SQL Editor after schema.sql.
 --
---  ONE THING TO EDIT: replace PASTE_YOUR_BREVO_KEY_HERE on line ~18 with
---  your Brevo API key (the xsmtpsib-... value Arlo generated). Then paste
---  this whole file into the SQL Editor and click Run.
+--  TWO THINGS TO EDIT (search "CHANGE ME"):
+--    1. web_app_url  = the Web app URL from your Google Apps Script deployment
+--    2. shared_secret = the SHARED_SECRET from apps-script.gs (must match)
+--  Then paste this whole file into the SQL Editor and click Run.
 --
---  How it works: an AFTER INSERT trigger on workspace_invites calls Brevo's
---  email API through pg_net (asynchronous, so inserts never block). It also
---  creates an in-app Notification for the invitee if they already have an
---  account. No terminal, no CLI, no secrets screen needed.
+--  How it works: an AFTER INSERT trigger on workspace_invites calls a Google
+--  Apps Script web app through pg_net (asynchronous, inserts never block).
+--  The script emails the branded HTML from bililist1107@gmail.com. It also
+--  files an in-app Notification for the invitee if they already use BiliLIST.
 -- ==========================================================================
 
--- 1. Enable the async HTTP extension (Dashboard → Database → Extensions → pg_net)
+-- 1. Enable the async HTTP extension
 create extension if not exists pg_net with schema extensions;
 
--- 2. Store the mail credentials in a private, deny-by-default table
+-- 2. Private config table: the web app URL + shared secret (deny-all to clients)
 create table if not exists public.app_mail_settings (
-  id            int primary key default 1,
-  brevo_key     text not null default '',
-  sender_email  text not null default 'bililist1107@gmail.com',
-  sender_name   text not null default 'BiliLIST'
+  id             int primary key default 1,
+  web_app_url    text not null default '',
+  shared_secret  text not null default ''
 );
 alter table public.app_mail_settings enable row level security;
 revoke all on public.app_mail_settings from anon, authenticated;
 
--- >>> PUT YOUR BREVO KEY INSIDE THE QUOTES BELOW <<<
-insert into public.app_mail_settings (id, brevo_key)
-values (1, 'PASTE_YOUR_BREVO_KEY_HERE')
+insert into public.app_mail_settings (id, web_app_url, shared_secret)
+values (1,
+  'CHANGE_ME_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL',
+  'CHANGE_ME_YOUR_SHARED_SECRET')
 on conflict (id) do nothing;
 
 -- 3. Tiny HTML escaper so names from the database cannot break the email
@@ -40,7 +41,7 @@ as $$
     '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;'), '''', '&#39;');
 $$;
 
--- 4. The actual sender: builds the branded email and POSTs it to Brevo
+-- 4. The sender: builds the branded email and POSTs it to the Apps Script
 create or replace function public.dispatch_invite_email(p_invite record)
 returns void
 language plpgsql
@@ -48,27 +49,26 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_key       text;
-  v_sender    text;
-  v_sender_name text;
+  v_url       text;
+  v_secret    text;
   v_ws        text;
   v_inviter   text;
-  v_url       text;
+  v_link      text;
   v_html      text;
 begin
-  select brevo_key, sender_email, sender_name
-    into v_key, v_sender, v_sender_name
+  select web_app_url, shared_secret into v_url, v_secret
   from public.app_mail_settings where id = 1;
 
-  -- if the key was not filled in, stay silent rather than spamming errors
-  if v_key is null or v_key = '' or v_key = 'PASTE_YOUR_BREVO_KEY_HERE' then
+  -- if setup is incomplete, stay silent rather than spamming errors
+  if v_url is null or v_url = '' or v_url = 'CHANGE_ME_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL'
+     or v_secret is null or v_secret = '' or v_secret = 'CHANGE_ME_YOUR_SHARED_SECRET' then
     return;
   end if;
 
   select name into v_ws from public.workspaces where id = p_invite.workspace_id;
   select full_name into v_inviter from public.profiles where id = p_invite.invited_by;
 
-  v_url := 'https://secret2po.github.io/BiliList/?invite=' || p_invite.token || '#/dashboard';
+  v_link := 'https://secret2po.github.io/BiliList/?invite=' || p_invite.token || '#/dashboard';
 
   v_html :=
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' ||
@@ -92,19 +92,16 @@ begin
   v_html := replace(v_html, '__INVITER__',   public.esc_html(coalesce(v_inviter, 'A household member')));
   v_html := replace(v_html, '__WORKSPACE__', public.esc_html(coalesce(v_ws, 'a BiliLIST household')));
   v_html := replace(v_html, '__ROLE__',      public.esc_html(initcap(coalesce(p_invite.role::text, 'editor'))));
-  v_html := replace(v_html, '__URL__',       public.esc_html(v_url));
+  v_html := replace(v_html, '__URL__',       public.esc_html(v_link));
 
   perform net.http_post(
-    url := 'https://api.brevo.com/v3/smtp/email',
-    headers := jsonb_build_object(
-      'api-key', v_key,
-      'content-type', 'application/json'
-    ),
+    url := v_url,
+    headers := jsonb_build_object('Content-Type', 'application/json'),
     body := jsonb_build_object(
-      'sender', jsonb_build_object('name', v_sender_name, 'email', v_sender),
-      'to', jsonb_build_array(jsonb_build_object('email', p_invite.email)),
+      'secret',  v_secret,
+      'to',      p_invite.email,
       'subject', 'You''re invited to ' || coalesce(v_ws, 'a BiliLIST household'),
-      'htmlContent', v_html
+      'html',    v_html
     )
   );
 end;
@@ -120,7 +117,6 @@ as $$
 begin
   perform public.dispatch_invite_email(new);
 
-  -- if the invitee already uses BiliLIST, drop a Notification into their feed
   insert into public.notifications (user_id, workspace_id, kind, title, body, data)
   select u.id, new.workspace_id, 'invite',
          coalesce((select full_name from public.profiles where id = new.invited_by), 'A household member')
@@ -167,5 +163,4 @@ $$;
 revoke all on function public.resend_invite_email(text) from public;
 grant execute on function public.resend_invite_email(text) to authenticated;
 
--- Done. Test: send an invite in the app, then check Brevo → Transactional logs,
--- or run: select * from net._http_response order by created desc limit 5;
+-- Done. Test after inviting: select * from net._http_response order by created desc limit 5;
