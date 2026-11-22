@@ -2536,3 +2536,12 @@ html.theme-switching *::after {
 .invite-status.ok { color: var(--green-600); font-weight: 600; }
 .invite-status.err { color: var(--danger); font-weight: 600; }
 #invite-modal .modal-foot { justify-content: space-between; }
+
+/* invite form feedback + pending row actions */
+.invite-error {
+  margin: 10px 0 0; padding: 9px 12px; border-radius: 8px;
+  background: #FBEAE8; color: var(--danger); font-size: 12.5px; line-height: 1.5;
+}
+.invite-error[hidden] { display: none; }
+.pending-actions { display: flex; gap: 6px; flex: none; }
+.pending-actions .btn-resend { width: auto; padding: 0 10px; }

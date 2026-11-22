@@ -3200,7 +3200,10 @@
             '<div class="m-name">' + esc(p.email) + '</div>' +
             '<div class="m-sub">Invited as ' + esc(p.role) + ' · sent ' + esc(p.sent || 'just now') + '</div>' +
           '</div>' +
-          '<button class="btn-resend" data-resend="' + esc(p.email) + '">Resend</button>' +
+          '<div class="pending-actions">' +
+            '<button class="btn-resend" data-copylink="' + esc(p.token || '') + '">Copy link</button>' +
+            '<button class="btn-resend" data-resend="' + esc(p.email) + '">Resend</button>' +
+          '</div>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -3253,6 +3256,7 @@
           '</select>' +
           '<button class="btn-invite" data-act="invite">' + icon('mail') + ' Send invite</button>' +
         '</div>' +
+        '<p class="invite-error" id="invite-error" hidden></p>' +
         '<p class="hint">Editors can add items, set purchases and manage tasks.</p>' +
 
         '<div style="margin-top:6px">' + memberRows + '</div>' +
@@ -3435,42 +3439,59 @@
     }
   }
 
+  function showInviteError(message) {
+    var el = $('#invite-error');
+    if (el) { el.textContent = message; el.hidden = false; }
+    toast(message);
+  }
+
   function invite() {
     var emailEl = $('#invite-email');
     var roleEl = $('#invite-role');
+    var errEl = $('#invite-error');
+    if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+    if (!emailEl) return;
     var email = (emailEl.value || '').trim().toLowerCase();
     var problem = emailProblem(email);
     if (problem) {
-      toast(problem);
-      if (emailEl) { emailEl.classList.add('invalid'); emailEl.focus(); }
+      showInviteError(problem);
+      emailEl.classList.add('invalid');
+      emailEl.focus();
       return;
     }
     emailEl.classList.remove('invalid');
     var role = roleEl ? String(roleEl.value || 'editor').toLowerCase() : 'editor';
-    var ws = activeWorkspace();
-    var me = you();
 
     if (state.pending.some(function (p) { return p.email.toLowerCase() === email; })) {
-      toast('An invite to ' + email + ' is already pending');
+      showInviteError('An invite to ' + email + ' is already pending');
       return;
     }
 
     /* in cloud mode, insert the invite — the database trigger emails it and
        files an in-app Notification, so no Edge Function / CLI is needed */
     if (cloudMode() && S.client) {
+      if (!cloud.workspaceId || !state.user) {
+        showInviteError('Your session is not ready — refresh the page and try again.');
+        return;
+      }
+      toast('Sending invite…');
       S.client.from('workspace_invites').insert({
         workspace_id: cloud.workspaceId,
         email: email,
         role: role,
-        invited_by: state.user ? state.user.id : null
+        invited_by: state.user.id
       }).select('*').single().then(function (r) {
         if (r.error) throw r.error;
         state.pending.push({ email: email, role: role, token: r.data.token, id: r.data.id, created_at: r.data.created_at });
         renderDrawer();
-        toast('Invite sent to ' + email + ' — check their inbox');
+        toast('Invite created — use Copy link if email delivery is not set up yet');
         runCloudRefresh();
       }).catch(function (err) {
-        cloudError('Could not send that invite', err);
+        var detail = (err && (err.message || err.details)) || 'Check the email and try again.';
+        /* a pending invite already in the database is shown as a plain message */
+        if (/duplicate|unique/i.test(detail)) detail = 'An invite to this email is already pending.';
+        showInviteError('Could not send invite: ' + detail);
+        console.error('invite failed', err);
       });
       return;
     }
@@ -6355,8 +6376,19 @@
   }
 
   function onDrawerClick(e) {
-    var el = e.target.closest ? e.target.closest('[data-act],[data-ws],[data-resend]') : null;
+    var el = e.target.closest ? e.target.closest('[data-act],[data-ws],[data-resend],[data-copylink]') : null;
     if (!el) return;
+
+    if (el.dataset.copylink) {
+      var link = APP_URL + '?invite=' + encodeURIComponent(el.dataset.copylink) + '#/dashboard';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(function () { toast('Invite link copied — send it to them'); })
+          .catch(function () { toast('Copy this link: ' + link); });
+      } else {
+        toast('Copy this link: ' + link);
+      }
+      return;
+    }
 
     if (el.dataset.ws) {
       state.workspaces.forEach(function (w) { w.active = w.id === el.dataset.ws; });
