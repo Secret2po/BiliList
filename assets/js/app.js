@@ -4931,13 +4931,18 @@
      using the secure PKCE client above. */
   var otpClient = null;
   function otp() {
-    if (otpClient) return otpClient;
-    if (!S.client || !globalSupabaseCreateClient()) return S.client;
+    if (otpClient && otpClient.auth) return otpClient;
+    var create = globalSupabaseCreateClient();
+    if (!S.client || !create) return S.client;
     try {
-      otpClient = globalSupabaseCreateClient(S.url, S.anonKey || configKey(), {
+      /* globalSupabaseCreateClient() hands back the factory — it has to be
+         CALLED to produce a client. Skipping that left otp().auth undefined
+         and every OTP call threw a silent TypeError ("nothing happens"). */
+      otpClient = create(S.url, S.anonKey || configKey(), {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit' }
       });
     } catch (e) { otpClient = S.client; }
+    if (!otpClient || !otpClient.auth) otpClient = S.client;
     return otpClient;
   }
   function globalSupabaseCreateClient() {
