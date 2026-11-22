@@ -4166,6 +4166,8 @@
     }
 
     closeDrawer();
+    /* a half-finished Google verification must not be resumed later */
+    setPendingVerify('');
     if (S.client) {
       /* clear the Supabase session too, so a refresh cannot sign you back in */
       S.client.auth.signOut().catch(function () { /* offline: local state is already cleared */ });
@@ -4526,7 +4528,10 @@
       last_name: details.lastName,
       suffix: details.suffix || '',
       full_name: details.fullName,
-      birthday: details.birthday || null
+      birthday: details.birthday || null,
+      /* the marker read by routeAfterAuth: onboarding is done; only the
+         emailed code still stands between this account and the app */
+      password_set: true
     };
 
     /* No profile row exists yet on purpose — the database creates it (and
@@ -5166,14 +5171,30 @@
     }
 
     return loadProfile(user).then(function (profile) {
+      /* Deferred creation means no profile row exists until the person enters
+         the app. Two cases with no row:
+           - onboarding details are already in metadata -> verified, let them in
+           - otherwise -> brand new Google account, force the onboarding steps
+         The pending-verify check above already stopped the in-between case. */
+      if (!profile) {
+        var meta = user.user_metadata || {};
+        if (meta.first_name && meta.last_name && meta.password_set) {
+          onSignedIn(user, opts);
+        } else {
+          showOnboarding(user);
+        }
+        return;
+      }
       if (profileNeedsSetup(profile)) {
         showOnboarding(user);
         return;
       }
       onSignedIn(user, opts);
     }).catch(function () {
-      /* Never lock someone out because the profile read failed. */
-      onSignedIn(user, opts);
+      /* A profile read failure must not create a back door past onboarding. */
+      var meta = (user && user.user_metadata) || {};
+      if (meta.first_name && meta.last_name && meta.password_set) onSignedIn(user, opts);
+      else showOnboarding(user);
     });
   }
 
