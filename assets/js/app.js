@@ -4934,11 +4934,14 @@
 
   var APP_URL = 'https://secret2po.github.io/BiliList/';
   function redirectTo() {
-    /* On the deployed Pages site the app lives at /BiliList/ — using the
-       bare origin would send email verify links to secret2po.github.io,
-       which has no Pages site and returns a 404. Always use the full path. */
-    if (/github\.io$/i.test(window.location.hostname)) return APP_URL;
-    return window.location.origin + window.location.pathname;
+    /* Always use the real deployed URL. Deriving it from the current page
+       used to produce bare secret2po.github.io (a 404) when someone opened
+       the site from a shortened link or a redirect. Local tests still use
+       localhost so verification works during development. */
+    if (/localhost|127\.0\.0\.1/i.test(window.location.hostname)) {
+      return window.location.origin + window.location.pathname;
+    }
+    return APP_URL;
   }
 
   /* -------------------------------------------------- Google Identity Services
@@ -5310,14 +5313,24 @@
   function verifyCode(email, token) {
     if (!S.client) { signInDemo(); return; }
 
-    /* signUp codes check as "signup"; the OTP emailed for a Google account
-       (auth.signInWithOtp) checks as "magiclink". */
-    var type = auth.purpose === 'recovery' ? 'recovery'
-             : auth.purpose === 'google' ? 'magiclink'
-             : 'signup';
+    /* Supabase accepts an OTP under more than one type depending on how the
+       email was generated. Try the likely ones in order so a valid code is
+       never rejected purely because of the type label. Never try extra types
+       for signup / recovery — those have a single correct one. */
+    var types = auth.purpose === 'recovery' ? ['recovery']
+              : auth.purpose === 'google' ? ['magiclink', 'email']
+              : ['signup'];
 
-    S.client.auth.verifyOtp({ email: email, token: token, type: type })
+    S.client.auth.verifyOtp({ email: email, token: token, type: types[0] })
       .then(function (r) {
+        if (r.error && types.length > 1 && /invalid|incorrect|expired/i.test(r.error.message)) {
+          /* retry with the next candidate type before giving up */
+          return S.client.auth.verifyOtp({ email: email, token: token, type: types[1] });
+        }
+        return r;
+      })
+      .then(function (r) {
+        if (!r) return;
         if (r.error) {
           if (/expired|invalid|incorrect/i.test(r.error.message)) {
             authError('err-code', 'That code is not right or has expired. Ask for a new one.');
