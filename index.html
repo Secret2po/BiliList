@@ -131,7 +131,7 @@
             <label for="f-first">First name</label>
             <div class="input-wrap">
               <svg><use href="#i-user"/></svg>
-              <input class="input with-icon" type="text" id="f-first" placeholder="e.g. Alex" autocomplete="given-name" maxlength="30">
+              <input class="input with-icon" type="text" id="f-first" placeholder="e.g. Alex" autocomplete="given-name" maxlength="20">
             </div>
             <div class="field-error" id="err-first">Enter your first name.</div>
           </div>
@@ -140,7 +140,7 @@
             <label for="f-middle">Middle name <span class="optional">(optional)</span></label>
             <div class="input-wrap">
               <svg><use href="#i-user"/></svg>
-              <input class="input with-icon" type="text" id="f-middle" placeholder="e.g. Santos" autocomplete="additional-name" maxlength="30">
+              <input class="input with-icon" type="text" id="f-middle" placeholder="e.g. Santos" autocomplete="additional-name" maxlength="20">
             </div>
             <div class="field-error" id="err-middle">Use letters only for your middle name.</div>
           </div>
@@ -149,7 +149,7 @@
             <label for="f-last">Last name</label>
             <div class="input-wrap">
               <svg><use href="#i-user"/></svg>
-              <input class="input with-icon" type="text" id="f-last" placeholder="e.g. Lopez" autocomplete="family-name" maxlength="30">
+              <input class="input with-icon" type="text" id="f-last" placeholder="e.g. Lopez" autocomplete="family-name" maxlength="20">
             </div>
             <div class="field-error" id="err-last">Enter your last name.</div>
           </div>
@@ -158,9 +158,17 @@
             <label for="f-suffix">Suffix <span class="optional">(optional)</span></label>
             <div class="input-wrap">
               <svg><use href="#i-user"/></svg>
-              <input class="input with-icon" type="text" id="f-suffix" placeholder="e.g. Jr., Sr., III" autocomplete="honorific-suffix" maxlength="10">
+              <select class="input with-icon" id="f-suffix" autocomplete="honorific-suffix">
+                <option value="">None</option>
+                <option value="Jr.">Jr.</option>
+                <option value="Sr.">Sr.</option>
+                <option value="II">II</option>
+                <option value="III">III</option>
+                <option value="IV">IV</option>
+                <option value="V">V</option>
+              </select>
             </div>
-            <div class="field-error" id="err-suffix">Enter a real suffix, e.g. Jr., Sr. or III.</div>
+            <div class="field-error" id="err-suffix">Choose a suffix from the list.</div>
           </div>
 
           <div class="field" id="field-email">
@@ -558,6 +566,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=25"></script>
+<script src="assets/js/app.js?v=26"></script>
 </body>
 </html>

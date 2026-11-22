@@ -4399,22 +4399,14 @@
   /* Email: a real address needs a recognised ending. "gmail.co" is a common
      typo of gmail.com, so bare ".co" is deliberately not accepted. */
   var EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  var EMAIL_TLDS = [
-    'com','org','net','edu','gov','mil','int','info','biz','name','me','io','tv','app','dev','xyz','online','site','tech','store','blog','cloud','shop','live','world','today',
-    'ph','uk','us','ca','au','jp','de','fr','in','sg','my','id','nz','ie','ch','nl','it','es','kr','cn','br','mx','za','se','no','dk','fi','be','at','pl'
-  ];
-  var EMAIL_2PART_TLDS = ['co.uk','com.ph','org.ph','net.ph','edu.ph','gov.ph','com.au','co.jp','co.nz','co.in','com.sg','com.my','com.mx','com.br'];
-
   function emailProblem(v) {
     var s = String(v || '').trim();
     if (!EMAIL_SHAPE.test(s)) return 'Enter a valid email address, e.g. you@example.com';
     var domain = s.slice(s.lastIndexOf('@') + 1).toLowerCase();
-    var parts = domain.split('.');
-    var tld = parts.slice(1).join('.');
-    if (EMAIL_2PART_TLDS.indexOf(tld) !== -1) return '';
-    if (parts.length === 2 && EMAIL_TLDS.indexOf(tld) !== -1) return '';
     if (/^gmail\.co$/i.test(domain)) return 'Did you mean gmail.com?';
-    return 'Enter a valid email ending, e.g. .com, .org or .ph';
+    /* this project accepts .com addresses only */
+    if (!/\.com$/.test(domain)) return 'Use an email address ending in .com';
+    return '';
   }
 
   function validEmail(v) { return !emailProblem(v); }
@@ -4438,7 +4430,7 @@
      nickname. The check is deliberately permissive about accents, spaces,
      hyphens and apostrophes. */
   var NAME_RE = /^[\p{L}\p{M}][\p{L}\p{M}' .-]*[\p{L}\p{M}.]$/u;
-  var NAME_MAX = 30;
+  var NAME_MAX = 20;
 
   function nameProblem(value, label, required) {
     var raw = String(value == null ? '' : value);
