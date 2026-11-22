@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/styles.css?v=16">
+<link rel="stylesheet" href="assets/css/styles.css?v=17">
 </head>
 <body>
 
@@ -58,6 +58,7 @@
     <symbol id="i-trend-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l7 7 4-4 7 7"/><path d="M21 17v-5h-5"/></symbol>
     <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18v3"/><path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2.5"/><path d="M21 9.5v6H16a3 3 0 0 1 0-6h5z"/></symbol>
     <symbol id="i-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
     <symbol id="i-friends" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1.5A4.5 4.5 0 0 1 7 14h4a4.5 4.5 0 0 1 4.5 4.5V20"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M21.5 20v-1.2a3.6 3.6 0 0 0-2.7-3.5"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
@@ -346,12 +347,6 @@
         </span>
       </a>
 
-      <nav class="main-tabs" id="main-tabs">
-        <a class="main-tab is-active" href="#/dashboard" data-route="dashboard">Dashboard</a>
-        <a class="main-tab" href="#/lists" data-route="lists">My lists</a>
-        <a class="main-tab" href="#/spending" data-route="spending">Spending insights</a>
-      </nav>
-
       <div class="topbar-right">
         <button class="icon-btn theme-toggle" data-theme-toggle aria-label="Switch to dark mode" aria-pressed="false" title="Switch theme">
           <svg class="th-sun"><use href="#i-sun"/></svg>
@@ -423,7 +418,32 @@
 
 
 
-  <main id="page-root"></main>
+  <div class="app-body">
+    <aside class="sidenav" id="sidenav" aria-label="App navigation">
+      <div class="sidenav-head">
+        <span class="sidenav-title">Menu</span>
+        <button class="sidenav-toggle" id="sidenav-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="sidenav-nav" title="Collapse sidebar">
+          <svg class="sidenav-toggle-ico"><use href="#i-chevron-right"/></svg>
+        </button>
+      </div>
+      <nav class="sidenav-nav" id="sidenav-nav">
+        <a class="sidenav-item is-active" href="#/dashboard" data-route="dashboard" aria-current="page">
+          <svg class="sidenav-ico"><use href="#i-grid"/></svg>
+          <span class="sidenav-label">Dashboard</span>
+        </a>
+        <a class="sidenav-item" href="#/lists" data-route="lists">
+          <svg class="sidenav-ico"><use href="#i-list"/></svg>
+          <span class="sidenav-label">My lists</span>
+        </a>
+        <a class="sidenav-item" href="#/spending" data-route="spending">
+          <svg class="sidenav-ico"><use href="#i-chart"/></svg>
+          <span class="sidenav-label">Spending insights</span>
+        </a>
+      </nav>
+    </aside>
+
+    <main id="page-root"></main>
+  </div>
 
   <footer class="app-foot">
     <span>© 2026 BILILIST. A little order for everyday life.</span>
@@ -519,6 +539,6 @@
 <script src="assets/js/config.js?v=9"></script>
 <script src="assets/js/supabase-client.js?v=9"></script>
 <script src="assets/js/data.js?v=10"></script>
-<script src="assets/js/app.js?v=19"></script>
+<script src="assets/js/app.js?v=20"></script>
 </body>
 </html>

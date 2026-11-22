@@ -12,6 +12,7 @@
   var MIGRATE_KEY = 'bililist.migrated.';
   var GUIDE_KEY = 'bililist.guide.v1';
   var STARTER_KEY = 'bililist.starter.';
+  var SIDENAV_KEY = 'bililist.sidenav.v1';
 
   /* When a Supabase session is active, this is the source of truth. The
      localStorage prototype state is only used for demo / offline mode. */
@@ -1620,11 +1621,17 @@
 
   /* =============================== TOPBAR ================================ */
   function renderTopbar() {
-    $$('.main-tab').forEach(function (t) {
-      t.classList.toggle('is-active', t.dataset.route === state.route);
+    $$('.sidenav-item').forEach(function (t) {
+      var on = t.dataset.route === state.route;
+      t.classList.toggle('is-active', on);
+      if (on) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
     });
     $$('.mnav-item').forEach(function (t) {
-      t.classList.toggle('is-active', t.dataset.route === state.route);
+      var on = t.dataset.route === state.route;
+      t.classList.toggle('is-active', on);
+      if (on) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
     });
     var me = you();
     var ws = activeWorkspace();
@@ -1634,6 +1641,58 @@
     var subChip = $('#chip-sub');
     if (subChip) subChip.textContent = me.name.split(' ')[0] + ' · Household ' + me.role.toLowerCase();
     renderProfileMenu(me, ws);
+  }
+
+  /* =============================== SIDENAV =============================== */
+  function readSidenavPreference() {
+    try {
+      var v = localStorage.getItem(SIDENAV_KEY);
+      return v === '1' ? true : (v === '0' ? false : null);
+    } catch (e) { return null; }
+  }
+
+  function applySidenav(collapsed, persist) {
+    var nav = $('#sidenav');
+    if (!nav) return;
+    collapsed = !!collapsed;
+    nav.classList.toggle('is-collapsed', collapsed);
+
+    var btn = $('#sidenav-toggle');
+    if (btn) {
+      var label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', label);
+    }
+
+    if (persist) {
+      try { localStorage.setItem(SIDENAV_KEY, collapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function bindSidenav() {
+    var nav = $('#sidenav');
+    if (!nav) return;
+
+    /* no stored choice: collapse on tablet-sized windows so the content
+       still has room, but keep the full labels on a desktop */
+    var saved = readSidenavPreference();
+    applySidenav(saved === null ? window.innerWidth < 1180 : saved, false);
+
+    var btn = $('#sidenav-toggle');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        applySidenav(!nav.classList.contains('is-collapsed'), true);
+      });
+    }
+
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(function () {
+        if (readSidenavPreference() === null) applySidenav(window.innerWidth < 1180, false);
+      }, 120);
+    });
   }
 
   function activeWorkspace() {
@@ -6018,6 +6077,7 @@
     state.guideDismissed = readGuideDismissed();
     setBirthdayMax();
     bindTheme();
+    bindSidenav();
     applyTheme(currentTheme(), { persist: false });
 
     /* A tiny worker lets low-stock notifications outlive the tab; the app
@@ -6112,6 +6172,7 @@
       applyUser: applyUser,
       showApp: showApp,
       enterApp: enterApp,
+      sidenav: applySidenav,
       cloud: cloud,
       realtime: {
         start: startRealtime,

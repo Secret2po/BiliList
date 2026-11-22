@@ -2395,3 +2395,108 @@ html.theme-switching *::after {
   .dash-tools { flex-wrap: nowrap; }
   .btn-new-sm { flex: none; }
 }
+
+/* ==========================================================================
+   APP SHELL — collapsible left navigation
+   ========================================================================== */
+.app-body {
+  display: flex; align-items: flex-start;
+  width: 100%; max-width: 1560px; margin: 0 auto;
+  flex: 1 1 auto;
+}
+#page-root { flex: 1 1 auto; min-width: 0; }
+
+.sidenav {
+  position: sticky; top: var(--topbar-h); align-self: flex-start;
+  flex: 0 0 232px; width: 232px;
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  display: flex; flex-direction: column;
+  padding: 18px 14px 22px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  z-index: 35;
+  transition: width .22s ease, flex-basis .22s ease, padding .22s ease;
+}
+
+.sidenav-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 0 4px; margin-bottom: 12px; min-height: 32px;
+}
+.sidenav-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--muted-2); white-space: nowrap;
+  transition: opacity .15s ease;
+}
+.sidenav-toggle {
+  width: 30px; height: 30px; flex: none; border-radius: 9px;
+  display: grid; place-items: center;
+  color: var(--ink-soft); background: var(--cream-100);
+  border: 1px solid var(--line); transition: .15s;
+}
+.sidenav-toggle:hover {
+  background: var(--green-50); border-color: var(--green-200); color: var(--green-text);
+}
+.sidenav-toggle:focus-visible { outline: 2px solid var(--green-500); outline-offset: 2px; }
+.sidenav-toggle-ico {
+  width: 16px; height: 16px;
+  transform: rotate(180deg);
+  transition: transform .22s ease;
+}
+
+.sidenav-nav { display: flex; flex-direction: column; gap: 4px; }
+.sidenav-item {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  height: 44px; padding: 0 12px; border-radius: 12px;
+  color: var(--ink-soft); font-size: 13.5px; font-weight: 600;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.sidenav-item:hover { background: var(--cream-100); color: var(--ink); }
+.sidenav-item:focus-visible { outline: 2px solid var(--green-500); outline-offset: 2px; }
+.sidenav-item.is-active {
+  background: var(--green-600); color: var(--white);
+  box-shadow: 0 8px 18px rgba(44, 119, 73, .22);
+}
+.sidenav-ico {
+  width: 19px; height: 19px; flex: none;
+  color: var(--muted);
+  transition: color .15s;
+}
+.sidenav-item:hover .sidenav-ico { color: var(--green-text); }
+.sidenav-item.is-active .sidenav-ico { color: var(--white); }
+.sidenav-label { overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- rail mode ---- */
+.sidenav.is-collapsed {
+  flex-basis: 78px; width: 78px;
+  padding-left: 10px; padding-right: 10px;
+}
+.sidenav.is-collapsed .sidenav-head { justify-content: center; padding: 0; }
+.sidenav.is-collapsed .sidenav-title { width: 0; opacity: 0; overflow: hidden; }
+.sidenav.is-collapsed .sidenav-toggle-ico { transform: rotate(0deg); }
+.sidenav.is-collapsed .sidenav-item { justify-content: center; padding: 0; }
+.sidenav.is-collapsed .sidenav-label {
+  position: absolute; left: calc(100% + 10px); top: 50%;
+  transform: translateY(-50%);
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--ink); color: var(--cream-50);
+  font-size: 12.5px; font-weight: 600; line-height: 1;
+  white-space: nowrap; overflow: visible;
+  box-shadow: var(--sh-2);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .15s ease;
+  z-index: 80;
+}
+.sidenav.is-collapsed .sidenav-item:hover .sidenav-label,
+.sidenav.is-collapsed .sidenav-item:focus-visible .sidenav-label {
+  opacity: 1; visibility: visible;
+}
+
+@media (max-width: 980px) {
+  .app-body { display: block; }
+  .sidenav { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidenav, .sidenav-toggle-ico, .sidenav-item, .sidenav-label { transition: none; }
+}
