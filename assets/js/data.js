@@ -51,8 +51,7 @@
       { k: 'box',    l: 'box',    min: 1, max: 30,  step: 1 },
       { k: 'bag',    l: 'bag',    min: 1, max: 30,  step: 1 },
       { k: 'pouch',  l: 'pouch',  min: 1, max: 24,  step: 1 },
-      { k: 'loaf',   l: 'loaf',   min: 1, max: 12,  step: 1 },
-      { k: 'carton', l: 'carton', min: 1, max: 20,  step: 1 }
+      { k: 'loaf',   l: 'loaf',   min: 1, max: 12,  step: 1 }
     ] }
   ];
 

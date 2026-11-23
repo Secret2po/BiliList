@@ -632,6 +632,7 @@
         var copy = Object.assign({}, p);
         var n = Number(copy.amount);
         copy.amount = isFinite(n) && n > 0 ? Math.min(n, PRICE_MAX) : 0;
+        if (typeof copy.qty === 'string') copy.qty = copy.qty.replace(/\bcarton\b/g, 'box');
         return copy;
       }) : [];
     } catch (e) { state.purchases = []; }
@@ -678,11 +679,14 @@
         if (typeof it.qty === 'string') it.qty = parseQty(it.qty);
         if (!it.qty || typeof it.qty !== 'object') it.qty = { n: 1, u: 'pcs' };
         if (it.qty.u === 'run') it.qty.u = 'pcs';
+        /* "carton" was retired in favour of the existing "box" unit */
+        if (it.qty.u === 'carton') it.qty.u = 'box';
       });
     });
     state.inventory.forEach(function (p) {
       if (typeof p.qty === 'string') p.qty = parseQty(p.qty);
       if (!p.qty || typeof p.qty !== 'object') p.qty = { n: 1, u: 'pcs' };
+      if (p.qty.u === 'carton') p.qty.u = 'box';
       if (!p.cat) p.cat = guessCategory(p.name);
     });
   }
